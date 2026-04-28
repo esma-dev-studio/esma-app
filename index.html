@@ -1770,10 +1770,10 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
 
       {/* タブバー */}
       <div style={{display:'flex',background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0 4px'}}>
-        <button style={dtab('overview')}>概要</button>
-        <button style={dtab('settings')}>科目・設定</button>
-        <button style={dtab('tasks')}>タスク</button>
-        <button style={dtab('notes')}>メモ</button>
+        <button style={dtab('overview')} onClick={()=>setDetailTab('overview')}>概要</button>
+        <button style={dtab('settings')} onClick={()=>setDetailTab('settings')}>科目・設定</button>
+        <button style={dtab('tasks')} onClick={()=>setDetailTab('tasks')}>タスク</button>
+        <button style={dtab('notes')} onClick={()=>setDetailTab('notes')}>メモ</button>
       </div>
 
       {/* 概要タブ */}
@@ -2620,13 +2620,4 @@ function App(){
       <AdminView
         users={users} setUsers={setUsers}
         studentProfiles={studentProfiles} setStudentProfiles={setStudentProfiles}
-        instructorStudents={instructorStudents} setInstructorStudents={setInstructorStudents}
-      />
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(IS_LIVE?<SupabaseApp/>:<App/>);
-</script>
-</body>
-</h
+        instructorStudents={instructorStudents} setInstructorStudents={setInstructorS
