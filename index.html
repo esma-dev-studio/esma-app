@@ -2055,8 +2055,8 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
    Supabase 設定
    supabase.com でプロジェクトを作成したら以下を入力してください
    ═══════════════════════════════════════════════════════ */
-const SUPABASE_URL      = '';   // 例: 'https://xxxxxxxxxxxx.supabase.co'
-const SUPABASE_ANON_KEY = '';   // 例: 'eyJhbGciOiJIUzI1NiIs...'
+const SUPABASE_URL      = 'https://iipkgbdvyukhipmbxnrg.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_Em0YO7B3p4S8sNC9YovADQ_I-rWom0g';
 const IS_LIVE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const sb = IS_LIVE ? (window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) || null) : null;
 
