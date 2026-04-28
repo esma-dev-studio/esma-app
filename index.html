@@ -1689,13 +1689,14 @@ function StudentList({profiles,allSubjects,allSchedules,allDailyRecs,instructorN
 }
 
 /* ─── 講師：生徒詳細 ─────────────────────────────── */
-function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,instructorUserId,onUpdateNotes,onBack}){
+function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,instructorUserId,onUpdateNotes,onBack,setAllSubjects,setAllSchedules,allTasks,setAllTasks,setStudentProfiles}){
   const m=useMemo(()=>calcStudentMetrics(profile,subjects,schedules,dailyRecs),[profile,subjects,schedules,dailyRecs]);
   const ss=STATUS_STYLE[m.simpleStatus]||STATUS_STYLE['要確認'];
   const sortedNotes=useMemo(()=>[...instructorNotes].sort((a,b)=>b.date.localeCompare(a.date)),[instructorNotes]);
   const nextMeeting=sortedNotes[0]?.nextMeetingDate||'未設定';
   const[showForm,setShowForm]=useState(false);
   const[form,setForm]=useState({privateMemo:'',studentVisibleAction:'',nextMeetingDate:''});
+  const[detailTab,setDetailTab]=useState('overview');
 
   const last7=useMemo(()=>{
     const days=[];
@@ -1709,6 +1710,25 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
   },[dailyRecs]);
   const maxAct=Math.max(...last7.map(d=>d.actual),1);
 
+  // per-student setter（講師・管理者が生徒データを代理編集するため）
+  const mss=(setAll,sid)=>setAll?(updater)=>{
+    setAll(prev=>{
+      const others=(prev||[]).filter(x=>x.studentId!==sid);
+      const mine=(prev||[]).filter(x=>x.studentId===sid);
+      const next=typeof updater==='function'?updater(mine):updater;
+      return[...others,...next.map(x=>({...x,studentId:sid}))];
+    });
+  }:null;
+  const setSubjectsF=useMemo(()=>mss(setAllSubjects,profile.id),[setAllSubjects,profile?.id]);
+  const setSchedulesF=useMemo(()=>mss(setAllSchedules,profile.id),[setAllSchedules,profile?.id]);
+  const tasksF=useMemo(()=>(allTasks||[]).filter(t=>t.studentId===profile.id),[allTasks,profile?.id]);
+  const setTasksF=useMemo(()=>mss(setAllTasks,profile.id),[setAllTasks,profile?.id]);
+  const cfg=useMemo(()=>({...INIT_CFG,...profile}),[profile]);
+  const setCfg=useCallback((updater)=>{
+    if(!setStudentProfiles)return;
+    setStudentProfiles(prev=>(prev||[]).map(p=>p.id===profile.id?{...p,...(typeof updater==='function'?updater(p):updater)}:p));
+  },[setStudentProfiles,profile?.id]);
+
   const saveNote=()=>{
     if(!form.privateMemo.trim())return;
     const n={id:`in-${Date.now()}`,studentId:profile.id,instructorUserId,date:todayStr(),
@@ -1719,117 +1739,130 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
     setShowForm(false);
   };
   const toggleChecked=(id)=>onUpdateNotes(p=>p.map(n=>n.id===id?{...n,checked:!n.checked}:n));
+  const dtab=(id)=>({flex:1,padding:'8px 0',border:'none',borderBottom:`2px solid ${detailTab===id?BRAND:'transparent'}`,background:'transparent',color:detailTab===id?BRAND:'#64748b',fontWeight:detailTab===id?700:500,fontSize:11,cursor:'pointer'});
 
   return(
     <div>
-      <div style={{background:'linear-gradient(135deg,#4f46e5,#6366f1)',padding:'16px 18px',color:'#fff'}}>
-        <button onClick={onBack} style={{border:'none',background:'rgba(255,255,255,.2)',color:'#fff',borderRadius:8,padding:'5px 12px',fontSize:12,fontWeight:700,cursor:'pointer',marginBottom:10}}>← 一覧に戻る</button>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-          <div><div style={{fontSize:22,fontWeight:800}}>{profile.name}</div><div style={{fontSize:12,opacity:.8,marginTop:1}}>{profile.grade}</div></div>
-          <span style={{fontSize:11,fontWeight:700,color:ss.color,background:ss.bg,padding:'4px 10px',borderRadius:10}}>{m.simpleStatus}</span>
+      {/* ヘッダー */}
+      <div style={{background:`linear-gradient(135deg,${ss.bg},#fff)`,padding:'14px 16px 12px',borderBottom:`3px solid ${ss.border}`}}>
+        <button onClick={onBack} style={{background:'none',border:'none',color:BRAND,fontWeight:700,fontSize:12,cursor:'pointer',padding:'0 0 10px',display:'flex',alignItems:'center',gap:4}}>← 戻る</button>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+          <div>
+            <div style={{fontSize:20,fontWeight:800,color:'#1e293b'}}>{profile.name}</div>
+            <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{profile.grade} / {profile.targetGraduateSchool}</div>
+            <div style={{fontSize:11,color:'#94a3b8'}}>{profile.department}</div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+            <span style={{fontSize:10,fontWeight:700,color:ss.color,background:ss.bg,border:`1px solid ${ss.border}`,padding:'3px 10px',borderRadius:10}}>{m.simpleStatus}</span>
+            <span style={{fontSize:10,color:'#94a3b8'}}>試験まで{m.daysLeft}日</span>
+            <span style={{fontSize:10,color:'#94a3b8'}}>次回面談：{nextMeeting}</span>
+          </div>
         </div>
-        <div style={{fontSize:11,opacity:.75,marginTop:5}}>{profile.targetGraduateSchool} / {profile.department}</div>
-        <div style={{fontSize:11,opacity:.75}}>試験日：{profile.examDate}（残{m.daysLeft}日）　次回面談：{nextMeeting}</div>
-      </div>
-
-      <div style={{display:'flex',flexDirection:'column',gap:12,padding:'12px 14px 8px'}}>
-        {/* 今週の状況 */}
-        <Card style={{padding:'14px 16px'}}>
-          <Sec>今週の学習状況</Sec>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
-            {[['今週予定',`${m.weekPlanned}h`,'#64748b'],['今週実績',`${m.weekActual}h`,'#334155'],['達成率',`${m.weekAchievementRate}%`,ss.color]].map(([l,v,c])=>(
-              <div key={l} style={{textAlign:'center',background:'#f8fafc',borderRadius:9,padding:'8px 6px'}}>
-                <div style={{fontSize:10,color:'#94a3b8',marginBottom:2}}>{l}</div>
-                <div style={{fontSize:15,fontWeight:800,color:c}}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{fontSize:12,color:m.todayRecorded?'#059669':'#94a3b8',fontWeight:600}}>{m.todayRecorded?'✓ 今日の記録あり':'✗ 今日の記録なし'}</div>
-        </Card>
-
-        {/* 科目別今週実績 */}
-        <Card style={{padding:'14px 16px'}}>
-          <Sec>科目別 今週実績</Sec>
-          {m.subjectWeekMetrics.map(s=>(
-            <div key={s.id} style={{marginBottom:10}}>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                <div style={{display:'flex',alignItems:'center',gap:6}}>
-                  <div style={{width:8,height:8,borderRadius:'50%',background:s.color}}/>
-                  <span style={{fontSize:12,fontWeight:600,color:'#334155'}}>{s.name}</span>
-                </div>
-                <span style={{fontSize:11,color:'#64748b'}}>{s.actual}/{s.planned}h{s.pct!=null?` (${s.pct}%)`:''}</span>
-              </div>
-              <div style={{background:'#f1f5f9',borderRadius:4,height:8,overflow:'hidden'}}>
-                <div style={{height:'100%',borderRadius:4,background:s.color,width:`${Math.min(s.pct??0,100)}%`}}/>
-              </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
+          {[['今週予定',`${m.weekPlanned}h`,'#64748b'],['今週実績',`${m.weekActual}h`,'#334155'],['達成率',`${m.weekAchievementRate}%`,ss.color]].map(([l,v,c])=>(
+            <div key={l} style={{background:'rgba(255,255,255,.7)',borderRadius:8,padding:'5px 6px',textAlign:'center'}}>
+              <div style={{fontSize:9,color:'#94a3b8',marginBottom:1}}>{l}</div>
+              <div style={{fontSize:13,fontWeight:800,color:c}}>{v}</div>
             </div>
           ))}
-        </Card>
+        </div>
+      </div>
 
-        {/* 直近7日間 */}
-        <Card style={{padding:'14px 16px'}}>
-          <Sec>直近7日間の記録</Sec>
-          <div style={{display:'flex',gap:4,justifyContent:'space-between'}}>
-            {last7.map(d=>(
-              <div key={d.date} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-                <div style={{fontSize:8,color:'#94a3b8'}}>{d.dow}</div>
-                <div style={{fontSize:8,color:'#94a3b8'}}>{d.label}</div>
-                <div style={{width:'100%',height:44,background:'#f1f5f9',borderRadius:4,display:'flex',alignItems:'flex-end',overflow:'hidden'}}>
-                  {d.actual>0&&<div style={{width:'100%',background:d.recorded?BRAND:'#94a3b8',height:`${Math.round(d.actual/maxAct*100)}%`,borderRadius:'4px 4px 0 0'}}/>}
+      {/* タブバー */}
+      <div style={{display:'flex',background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0 4px'}}>
+        <button style={dtab('overview')}>概要</button>
+        <button style={dtab('settings')}>科目・設定</button>
+        <button style={dtab('tasks')}>タスク</button>
+        <button style={dtab('notes')}>メモ</button>
+      </div>
+
+      {/* 概要タブ */}
+      {detailTab==='overview'&&(
+        <div style={{padding:'14px'}}>
+          <Card style={{padding:'12px 14px',marginBottom:12}}>
+            <div style={{fontWeight:700,fontSize:12,color:'#64748b',marginBottom:8}}>直近7日間</div>
+            <div style={{display:'flex',gap:4,alignItems:'flex-end',height:60}}>
+              {last7.map(d=>(
+                <div key={d.date} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                  <div style={{width:'100%',background:d.recorded?BRAND:'#e2e8f0',borderRadius:'3px 3px 0 0',height:d.actual>0?`${Math.round(d.actual/maxAct*48)+4}px`:'4px',minHeight:'4px'}}/>
+                  <div style={{fontSize:8,color:'#94a3b8'}}>{d.label}</div>
+                  <div style={{fontSize:7,color:'#94a3b8'}}>{d.dow}</div>
                 </div>
-                <div style={{fontSize:9,fontWeight:700,color:d.recorded?'#334155':'#cbd5e1'}}>{d.actual>0?`${d.actual}h`:'—'}</div>
+              ))}
+            </div>
+          </Card>
+          <Card style={{padding:'12px 14px'}}>
+            <div style={{fontWeight:700,fontSize:12,color:'#64748b',marginBottom:8}}>科目別（今週）</div>
+            {m.subjectWeekMetrics.length===0&&<div style={{fontSize:12,color:'#94a3b8',textAlign:'center',padding:'8px 0'}}>科目未登録</div>}
+            {m.subjectWeekMetrics.map(s=>(
+              <div key={s.id} style={{marginBottom:8}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
+                  <span style={{fontWeight:600,color:'#334155'}}>{s.name}</span>
+                  <span style={{color:'#64748b'}}>{s.actual}h / {s.planned}h {s.pct!=null?`(${s.pct}%)`:''}</span>
+                </div>
+                <div style={{height:5,background:'#f1f5f9',borderRadius:3}}>
+                  <div style={{height:'100%',background:s.color||BRAND,borderRadius:3,width:`${Math.min(s.pct||0,100)}%`}}/>
+                </div>
               </div>
             ))}
-          </div>
-        </Card>
+          </Card>
+        </div>
+      )}
 
-        {/* 講師メモ */}
-        <Card style={{padding:'14px 16px'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-            <Sec style={{marginBottom:0}}>講師メモ</Sec>
-            <button onClick={()=>setShowForm(p=>!p)} style={{padding:'5px 12px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer'}}>
-              {showForm?'閉じる':'＋ 追加'}
-            </button>
-          </div>
-          {showForm&&(
-            <div style={{background:'#f8fafc',borderRadius:11,padding:14,marginBottom:14,border:`1.5px solid ${BRAND}`}}>
-              <div style={{display:'flex',flexDirection:'column',gap:9}}>
-                <div>
-                  <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:3}}>講師メモ（内部用）</label>
-                  <textarea value={form.privateMemo} onChange={e=>setForm(p=>({...p,privateMemo:e.target.value}))} rows={3} placeholder="面談内容・気づき・注意点..." style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,resize:'vertical'}}/>
-                </div>
-                <div>
-                  <label style={{fontSize:11,fontWeight:700,color:'#6366f1',display:'block',marginBottom:3}}>生徒への次回アクション（生徒側に表示可）</label>
-                  <input type="text" value={form.studentVisibleAction} onChange={e=>setForm(p=>({...p,studentVisibleAction:e.target.value}))} placeholder="例：行列計算の問題集を1章終わらせる" style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #ddd6fe',fontSize:13}}/>
-                </div>
-                <div>
-                  <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:3}}>次回面談日</label>
-                  <input type="date" value={form.nextMeetingDate} onChange={e=>setForm(p=>({...p,nextMeetingDate:e.target.value}))} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13}}/>
-                </div>
-                <button onClick={saveNote} disabled={!form.privateMemo.trim()} style={{padding:'10px',borderRadius:9,border:'none',background:form.privateMemo.trim()?BRAND:'#e2e8f0',color:form.privateMemo.trim()?'#fff':'#94a3b8',fontWeight:800,fontSize:13,cursor:form.privateMemo.trim()?'pointer':'not-allowed'}}>保存する</button>
-              </div>
+      {/* 科目・設定タブ */}
+      {detailTab==='settings'&&(
+        setSubjectsF&&setSchedulesF
+          ?<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjectsF} schedules={schedules} setSchedules={setSchedulesF} dailyRecs={dailyRecs} setDailyRecs={()=>{}} tasks={tasksF} setTasks={()=>{}}/>
+          :<div style={{padding:20,textAlign:'center',color:'#94a3b8',fontSize:13}}>設定権限がありません</div>
+      )}
+
+      {/* タスクタブ */}
+      {detailTab==='tasks'&&(
+        setTasksF
+          ?<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasksF} setTasks={setTasksF}/>
+          :<div style={{padding:20,textAlign:'center',color:'#94a3b8',fontSize:13}}>タスク機能は利用できません</div>
+      )}
+
+      {/* メモタブ */}
+      {detailTab==='notes'&&(
+        <div style={{padding:'14px'}}>
+          <Card style={{padding:'14px 16px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <div style={{fontWeight:800,fontSize:13,color:'#1e293b'}}>講師メモ</div>
+              <button onClick={()=>setShowForm(p=>!p)} style={{padding:'5px 12px',borderRadius:8,border:`1px solid ${BRAND}`,background:showForm?BRAND:'#fff',color:showForm?'#fff':BRAND,fontWeight:700,fontSize:11,cursor:'pointer'}}>{showForm?'閉じる':'＋ 追加'}</button>
             </div>
-          )}
-          {sortedNotes.length===0&&<div style={{textAlign:'center',color:'#94a3b8',fontSize:12,padding:'12px 0'}}>まだメモがありません</div>}
-          {sortedNotes.map(n=>(
-            <div key={n.id} style={{padding:'11px 13px',background:n.checked?'#f8fafc':'#fff',border:`1px solid ${n.checked?'#e2e8f0':'#ddd6fe'}`,borderRadius:10,marginBottom:8,opacity:n.checked?.65:1}}>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
-                <span style={{fontSize:11,fontWeight:700,color:'#64748b'}}>{n.date}</span>
-                <button onClick={()=>toggleChecked(n.id)} style={{fontSize:10,padding:'2px 9px',borderRadius:8,border:'1px solid #e2e8f0',background:n.checked?'#f1f5f9':'#fff',color:n.checked?'#94a3b8':BRAND,cursor:'pointer',fontWeight:700}}>{n.checked?'確認済み':'確認する'}</button>
+            {showForm&&(
+              <div style={{marginBottom:14,paddingBottom:14,borderBottom:'1px solid #f1f5f9'}}>
+                <textarea value={form.privateMemo} onChange={e=>setForm(p=>({...p,privateMemo:e.target.value}))} placeholder="講師メモ（生徒には非表示）" rows={3} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12,resize:'vertical',marginBottom:8}}/>
+                <input value={form.studentVisibleAction} onChange={e=>setForm(p=>({...p,studentVisibleAction:e.target.value}))} placeholder="生徒へのアクション（生徒に表示）" style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12,marginBottom:8}}/>
+                <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:10}}>
+                  <label style={{fontSize:11,color:'#64748b',flexShrink:0}}>次回面談</label>
+                  <input type="date" value={form.nextMeetingDate} onChange={e=>setForm(p=>({...p,nextMeetingDate:e.target.value}))} style={{flex:1,padding:'7px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12}}/>
+                </div>
+                <button onClick={saveNote} style={{width:'100%',padding:'9px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>保存</button>
               </div>
-              <div style={{fontSize:13,color:'#334155',lineHeight:1.5,marginBottom:n.studentVisibleAction?5:0}}>{n.privateMemo}</div>
-              {n.studentVisibleAction&&<div style={{fontSize:11,color:'#6366f1',background:'#eef2ff',borderRadius:6,padding:'4px 8px',marginBottom:n.nextMeetingDate?4:0}}>→ 生徒アクション：{n.studentVisibleAction}</div>}
-              {n.nextMeetingDate&&<div style={{fontSize:11,color:'#64748b'}}>次回面談：{n.nextMeetingDate}</div>}
-            </div>
-          ))}
-        </Card>
-      </div>
+            )}
+            {sortedNotes.length===0&&<div style={{textAlign:'center',color:'#94a3b8',fontSize:12,padding:'12px 0'}}>まだメモがありません</div>}
+            {sortedNotes.map(n=>(
+              <div key={n.id} style={{padding:'11px 13px',background:n.checked?'#f8fafc':'#fff',border:`1px solid ${n.checked?'#e2e8f0':'#ddd6fe'}`,borderRadius:10,marginBottom:8,opacity:n.checked?.65:1}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                  <span style={{fontSize:11,fontWeight:700,color:'#64748b'}}>{n.date}</span>
+                  <button onClick={()=>toggleChecked(n.id)} style={{fontSize:10,padding:'2px 9px',borderRadius:8,border:'1px solid #e2e8f0',background:n.checked?'#f1f5f9':'#fff',color:n.checked?'#94a3b8':BRAND,cursor:'pointer',fontWeight:700}}>{n.checked?'確認済み':'確認する'}</button>
+                </div>
+                <div style={{fontSize:13,color:'#334155',lineHeight:1.5,marginBottom:n.studentVisibleAction?5:0}}>{n.privateMemo}</div>
+                {n.studentVisibleAction&&<div style={{fontSize:11,color:'#6366f1',background:'#eef2ff',borderRadius:6,padding:'4px 8px',marginBottom:n.nextMeetingDate?4:0}}>→ 生徒アクション：{n.studentVisibleAction}</div>}
+                {n.nextMeetingDate&&<div style={{fontSize:11,color:'#64748b'}}>次回面談：{n.nextMeetingDate}</div>}
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ─── 講師ビュー（ルーター） ─────────────────────── */
-function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorStudents,instructorNotes,setInstructorNotes,setStudentProfiles,setInstructorStudents,allStudentProfiles}){
+function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorStudents,instructorNotes,setInstructorNotes,setStudentProfiles,setInstructorStudents,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks}){
   const[selectedId,setSelectedId]=useState(null);
   const[viewMode,setViewMode]=useState('list'); // 'list' | 'assign'
   const[addMode,setAddMode]=useState(false);
@@ -1868,6 +1901,11 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
       instructorUserId={instructorUserId}
       onUpdateNotes={setInstructorNotes}
       onBack={()=>setSelectedId(null)}
+      setAllSubjects={setAllSubjects}
+      setAllSchedules={setAllSchedules}
+      allTasks={allTasks}
+      setAllTasks={setAllTasks}
+      setStudentProfiles={setStudentProfiles}
     />;
   }
   return(
@@ -1941,7 +1979,7 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
 }
 
 /* ─── 管理者ビュー ───────────────────────────────── */
-function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructorStudents,setInstructorStudents,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,currentUserId}){
+function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructorStudents,setInstructorStudents,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,currentUserId,allTasks,setAllTasks}){
   const[tab,setTab]=useState('students');
   const[selectedStudentId,setSelectedStudentId]=useState(null);
   const[addMode,setAddMode]=useState(null); // 'student'|'instructor'|'assign'
@@ -1961,6 +1999,11 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
       instructorUserId={currentUserId}
       onUpdateNotes={setInstructorNotes||((()=>{}))}
       onBack={()=>setSelectedStudentId(null)}
+      setAllSubjects={setAllSubjects}
+      setAllSchedules={setAllSchedules}
+      allTasks={allTasks||[]}
+      setAllTasks={setAllTasks}
+      setStudentProfiles={setStudentProfiles}
     />;
   }
   const instructors=users.filter(u=>u.role==='instructor');
@@ -2284,6 +2327,7 @@ function SupabaseApp(){
   const[allDailyRecs,setAllDailyRecsRaw]=useState([]);
   const[instructorStudents,setInstructorStudentsRaw]=useState([]);
   const[instructorNotes,setInstructorNotesRaw]=useState([]);
+  const[allTasksInst,setAllTasksInstRaw]=useState([]);
 
   // 管理者用
   const[adminUsers,setAdminUsersRaw]=useState([]);
@@ -2293,6 +2337,7 @@ function SupabaseApp(){
   const[adminAllSchedules,setAdminAllSchedulesRaw]=useState([]);
   const[adminAllDailyRecs,setAdminAllDailyRecsRaw]=useState([]);
   const[adminInstructorNotes,setAdminInstructorNotesRaw]=useState([]);
+  const[adminAllTasks,setAdminAllTasksRaw]=useState([]);
 
   // DB同期セッター
   const setSubjects      =useMemo(()=>makeDbSetter(setSubjectsRaw,     'subjects'),     []);
@@ -2309,6 +2354,10 @@ function SupabaseApp(){
   const setAdminInstructorNotes=useMemo(()=>makeDbSetter(setAdminInstructorNotesRaw,'instructor_notes'),[]);
   const setStudentProfilesDb=useMemo(()=>makeDbSetter(setStudentProfilesRaw,'student_profiles'),[]);
   const setInstructorStudentsDb=useMemo(()=>makeDbSetter(setInstructorStudentsRaw,'instructor_students'),[]);
+  const setAllSubjectsInstDb=useMemo(()=>makeDbSetter(setAllSubjectsRaw,'subjects'),[]);
+  const setAllSchedulesInstDb=useMemo(()=>makeDbSetter(setAllSchedulesRaw,'schedules'),[]);
+  const setAllTasksInstDb=useMemo(()=>makeDbSetter(setAllTasksInstRaw,'tasks'),[]);
+  const setAdminAllTasksDb=useMemo(()=>makeDbSetter(setAdminAllTasksRaw,'tasks'),[]);
 
   // cfg互換
   const cfg=useMemo(()=>({...INIT_CFG,...currentProfile}),[currentProfile]);
@@ -2360,19 +2409,20 @@ function SupabaseApp(){
         const{data:allProf}=await sb.from('student_profiles').select('*');
         setInstructorAllProfilesRaw(allProf||[]);
         if(sids.length){
-          const[pr,su,sc,dr,no]=await Promise.all([
+          const[pr,su,sc,dr,ta,no]=await Promise.all([
             sb.from('student_profiles').select('*').in('id',sids),
             sb.from('subjects').select('*').in('studentId',sids),
             sb.from('schedules').select('*').in('studentId',sids),
             sb.from('daily_records').select('*').in('studentId',sids),
+            sb.from('tasks').select('*').in('studentId',sids),
             sb.from('instructor_notes').select('*').eq('instructorUserId',uid),
           ]);
           setStudentProfilesRaw(pr.data||[]);setAllSubjectsRaw(su.data||[]);
           setAllSchedulesRaw(sc.data||[]);setAllDailyRecsRaw(dr.data||[]);
-          setInstructorNotesRaw(no.data||[]);
+          setAllTasksInstRaw(ta.data||[]);setInstructorNotesRaw(no.data||[]);
         }
       }else{
-        const[us,pr,is,su,sc,dr,no]=await Promise.all([
+        const[us,pr,is,su,sc,dr,no,ta]=await Promise.all([
           sb.from('users').select('*'),
           sb.from('student_profiles').select('*'),
           sb.from('instructor_students').select('*'),
@@ -2380,10 +2430,12 @@ function SupabaseApp(){
           sb.from('schedules').select('*'),
           sb.from('daily_records').select('*'),
           sb.from('instructor_notes').select('*'),
+          sb.from('tasks').select('*'),
         ]);
         setAdminUsersRaw(us.data||[]);setAdminProfilesRaw(pr.data||[]);setAdminISRaw(is.data||[]);
         setAdminAllSubjectsRaw(su.data||[]);setAdminAllSchedulesRaw(sc.data||[]);
         setAdminAllDailyRecsRaw(dr.data||[]);setAdminInstructorNotesRaw(no.data||[]);
+        setAdminAllTasksRaw(ta.data||[]);
       }
     }catch(e){setDataErr(e.message);}
     finally{setDataLoading(false);}
@@ -2443,13 +2495,13 @@ function SupabaseApp(){
   if(currentRole==='instructor')return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
-      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorStudents={instructorStudents} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setInstructorStudents={setInstructorStudentsDb} allStudentProfiles={instructorAllProfiles}/>
+      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorStudents={instructorStudents} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setInstructorStudents={setInstructorStudentsDb} allStudentProfiles={instructorAllProfiles} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb}/>
     </div>
   );
   return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
-      <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS} allSubjects={adminAllSubjects} allSchedules={adminAllSchedules} allDailyRecs={adminAllDailyRecs} instructorNotes={adminInstructorNotes} setInstructorNotes={setAdminInstructorNotes} currentUserId={currentUserId}/>
+      <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS} allSubjects={adminAllSubjects} allSchedules={adminAllSchedules} allDailyRecs={adminAllDailyRecs} instructorNotes={adminInstructorNotes} setInstructorNotes={setAdminInstructorNotes} currentUserId={currentUserId} allTasks={adminAllTasks} setAllTasks={setAdminAllTasksDb}/>
     </div>
   );
 }
@@ -2584,6 +2636,10 @@ function App(){
           setStudentProfiles={setStudentProfiles}
           setInstructorStudents={setInstructorStudents}
           allStudentProfiles={studentProfiles}
+          setAllSubjects={setAllSubjects}
+          setAllSchedules={setAllSchedules}
+          allTasks={allTasks}
+          setAllTasks={setAllTasks}
         />
       </div>
     );
