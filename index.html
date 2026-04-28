@@ -1930,10 +1930,19 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
                 {inp('grade','text','学年（例：大学4年）')}
                 {inp('targetGraduateSchool','text','志望大学院')}
                 {inp('department','text','専攻')}
-                {inp('examDate','date','')}
+                <div style={{marginBottom:8}}>
+                  <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>試験日 <span style={{fontWeight:400,color:'#94a3b8'}}>（後で変更できます）</span></label>
+                  {inp('examDate','date','')}
+                </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                  {inp('weeklyTargetHours','number','週目標時間(h)')}
-                  {inp('totalHoursGoal','number','累計目標時間(h)')}
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>週の目標時間（h）</label>
+                    {inp('weeklyTargetHours','number','')}
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>累計目標時間（h）</label>
+                    {inp('totalHoursGoal','number','')}
+                  </div>
                 </div>
                 <div style={{display:'flex',gap:8}}>
                   <button onClick={addStudent} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>追加する</button>
@@ -2075,10 +2084,19 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
                 {inp('grade','text','学年（例：大学4年）')}
                 {inp('targetGraduateSchool','text','志望大学院')}
                 {inp('department','text','専攻')}
-                {inp('examDate','date','')}
+                <div style={{marginBottom:8}}>
+                  <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>試験日 <span style={{fontWeight:400,color:'#94a3b8'}}>（後で変更できます）</span></label>
+                  {inp('examDate','date','')}
+                </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                  {inp('weeklyTargetHours','number','週目標時間(h)')}
-                  {inp('totalHoursGoal','number','累計目標時間(h)')}
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>週の目標時間（h）</label>
+                    {inp('weeklyTargetHours','number','')}
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>累計目標時間（h）</label>
+                    {inp('totalHoursGoal','number','')}
+                  </div>
                 </div>
                 <div style={{display:'flex',gap:8}}>
                   <button onClick={addStudent} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>追加する</button>
