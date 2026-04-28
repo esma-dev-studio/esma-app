@@ -2117,53 +2117,6 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
             ))}
           </>
         )}
-
-        {/* 担当割当タブ */}
-        {tab==='assignments'&&(
-          <>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>担当割当</span>
-              <button onClick={()=>setAddMode(addMode==='assign'?null:'assign')} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 割当追加</button>
-            </div>
-            {addMode==='assign'&&(
-              <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
-                <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>講師と生徒を紐づける</div>
-                <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>講師</label>
-                <select value={assignInst} onChange={e=>setAssignInst(e.target.value)} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:8,background:'#fff'}}>
-                  <option value=''>選択...</option>
-                  {instructors.filter(u=>u.active).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>生徒</label>
-                <select value={assignSt} onChange={e=>setAssignSt(e.target.value)} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:10,background:'#fff'}}>
-                  <option value=''>選択...</option>
-                  {studentProfiles.filter(p=>p.active).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <div style={{display:'flex',gap:8}}>
-                  <button onClick={addAssign} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>割り当てる</button>
-                  <button onClick={()=>setAddMode(null)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>閉じる</button>
-                </div>
-              </Card>
-            )}
-            {instructors.map(inst=>{
-              const assigned=instructorStudents.filter(is=>is.instructorUserId===inst.id);
-              if(!assigned.length)return null;
-              return(
-                <Card key={inst.id} style={{padding:'12px 16px'}}>
-                  <div style={{fontWeight:700,fontSize:13,color:BRAND,marginBottom:8}}>{inst.name}</div>
-                  {assigned.map(is=>{
-                    const prof=studentProfiles.find(p=>p.id===is.studentId);
-                    return(
-                      <div key={is.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',background:'#f8fafc',borderRadius:8,marginBottom:6}}>
-                        <div style={{fontSize:13,color:'#334155',fontWeight:600}}>{prof?.name||'不明'}</div>
-                        <button onClick={()=>removeAssign(is.id)} style={{fontSize:10,padding:'3px 9px',borderRadius:7,border:'1px solid #fecaca',background:'#fff1f2',color:'#dc2626',cursor:'pointer',fontWeight:700}}>解除</button>
-                      </div>
-                    );
-                  })}
-                </Card>
-              );
-            })}
-          </>
-        )}
       </div>
     </div>
   );
@@ -2621,4 +2574,4 @@ function App(){
       <AdminView
         users={users} setUsers={setUsers}
         studentProfiles={studentProfiles} setStudentProfiles={setStudentProfiles}
-        instructorStudents={instructorStudents} setInstructorStudents={setInstructorS
+        instructorStudents={instructorStudents} setInstructorStudents={setInstructorS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
