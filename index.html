@@ -1862,14 +1862,11 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
 }
 
 /* ─── 講師ビュー（ルーター） ─────────────────────── */
-function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorStudents,instructorNotes,setInstructorNotes,setStudentProfiles,setInstructorStudents,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks}){
+function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,setStudentProfiles,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks}){
   const[selectedId,setSelectedId]=useState(null);
-  const[viewMode,setViewMode]=useState('list'); // 'list' | 'assign'
   const[addMode,setAddMode]=useState(false);
   const[form,setForm]=useState({name:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
-  const assignedIds=instructorStudents.filter(is=>is.instructorUserId===instructorUserId).map(is=>is.studentId);
-  const profiles=studentProfiles.filter(p=>assignedIds.includes(p.id)&&p.active);
-  const unassigned=(allStudentProfiles||[]).filter(p=>p.active&&!assignedIds.includes(p.id));
+  const profiles=(studentProfiles||[]).filter(p=>p.active);
   const inp=(key,type='text',placeholder='')=>
     <input type={type} value={form[key]||''} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))}
       placeholder={placeholder} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:8}}/>;
@@ -1881,23 +1878,18 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
       examDate:form.examDate,startDate:todayStr(),weekdayStudyHours:2,weekendStudyHours:4,
       weeklyTargetHours:Number(form.weeklyTargetHours)||12,totalHoursGoal:Number(form.totalHoursGoal)||350,
       active:true,onboarded:false}]);
-    if(setInstructorStudents)setInstructorStudents(p=>[...(p||[]),{id:`is_${Date.now()}`,instructorUserId,studentId:sid}]);
     setForm({name:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
     setAddMode(false);
   };
-  const assignExisting=(sid)=>{
-    if(setInstructorStudents)setInstructorStudents(p=>[...(p||[]),{id:`is_${Date.now()}`,instructorUserId,studentId:sid}]);
-  };
-  const tabStyle=(active)=>({flex:1,padding:'9px 0',border:'none',borderBottom:`2px solid ${active?BRAND:'transparent'}`,background:'transparent',color:active?BRAND:'#64748b',fontWeight:active?700:500,fontSize:13,cursor:'pointer'});
   if(selectedId){
     const profile=profiles.find(p=>p.id===selectedId);
     if(!profile)return<div style={{padding:20}}>生徒が見つかりません</div>;
     return<StudentDetail
       profile={profile}
-      subjects={allSubjects.filter(s=>s.studentId===selectedId)}
-      schedules={allSchedules.filter(s=>s.studentId===selectedId)}
-      dailyRecs={allDailyRecs.filter(r=>r.studentId===selectedId)}
-      instructorNotes={instructorNotes.filter(n=>n.studentId===selectedId)}
+      subjects={(allSubjects||[]).filter(s=>s.studentId===selectedId)}
+      schedules={(allSchedules||[]).filter(s=>s.studentId===selectedId)}
+      dailyRecs={(allDailyRecs||[]).filter(r=>r.studentId===selectedId)}
+      instructorNotes={(instructorNotes||[]).filter(n=>n.studentId===selectedId)}
       instructorUserId={instructorUserId}
       onUpdateNotes={setInstructorNotes}
       onBack={()=>setSelectedId(null)}
@@ -1910,79 +1902,44 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
   }
   return(
     <div>
-      {/* タブ切替 */}
-      <div style={{display:'flex',background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0 14px'}}>
-        <button style={tabStyle(viewMode==='list')} onClick={()=>{setViewMode('list');setAddMode(false);}}>担当生徒 ({profiles.length})</button>
-        <button style={tabStyle(viewMode==='assign')} onClick={()=>{setViewMode('assign');setAddMode(false);}}>割当管理</button>
+      <div style={{padding:'12px 14px 8px',display:'flex',justifyContent:'flex-end'}}>
+        <button onClick={()=>setAddMode(p=>!p)} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 新規生徒追加</button>
       </div>
-
-      {/* 担当生徒タブ */}
-      {viewMode==='list'&&(
-        <>
-          <div style={{padding:'12px 14px 8px',display:'flex',justifyContent:'flex-end'}}>
-            <button onClick={()=>setAddMode(p=>!p)} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 新規生徒追加</button>
-          </div>
-          {addMode&&(
-            <div style={{margin:'0 14px 10px'}}>
-              <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
-                <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>新しい生徒を追加</div>
-                {inp('name','text','名前（例：山本さん）')}
-                {inp('grade','text','学年（例：大学4年）')}
-                {inp('targetGraduateSchool','text','志望大学院')}
-                {inp('department','text','専攻')}
-                <div style={{marginBottom:8}}>
-                  <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>試験日 <span style={{fontWeight:400,color:'#94a3b8'}}>（後で変更できます）</span></label>
-                  {inp('examDate','date','')}
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                  <div>
-                    <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>週の目標時間（h）</label>
-                    {inp('weeklyTargetHours','number','')}
-                  </div>
-                  <div>
-                    <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>累計目標時間（h）</label>
-                    {inp('totalHoursGoal','number','')}
-                  </div>
-                </div>
-                <div style={{display:'flex',gap:8}}>
-                  <button onClick={addStudent} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>追加する</button>
-                  <button onClick={()=>setAddMode(false)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>閉じる</button>
-                </div>
-              </Card>
+      {addMode&&(
+        <div style={{margin:'0 14px 10px'}}>
+          <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
+            <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>新しい生徒を追加</div>
+            {inp('name','text','名前（例：山本さん）')}
+            {inp('grade','text','学年（例：大学4年）')}
+            {inp('targetGraduateSchool','text','志望大学院')}
+            {inp('department','text','専攻')}
+            <div style={{marginBottom:8}}>
+              <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>試験日 <span style={{fontWeight:400,color:'#94a3b8'}}>（後で変更できます）</span></label>
+              {inp('examDate','date','')}
             </div>
-          )}
-          <StudentList
-            profiles={profiles}
-            allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs}
-            instructorNotes={instructorNotes}
-            onSelect={setSelectedId}
-          />
-        </>
-      )}
-
-      {/* 割当管理タブ */}
-      {viewMode==='assign'&&(
-        <div style={{padding:'14px'}}>
-          <div style={{fontWeight:700,fontSize:13,color:'#1e293b',marginBottom:10}}>未担当の生徒 ({unassigned.length}名)</div>
-          {unassigned.length===0&&(
-            <div style={{textAlign:'center',color:'#94a3b8',fontSize:12,padding:'20px 0'}}>担当可能な生徒はいません</div>
-          )}
-          {unassigned.map(p=>(
-            <Card key={p.id} style={{padding:'12px 16px',marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div>
-                  <div style={{fontSize:14,fontWeight:700,color:'#1e293b'}}>{p.name}</div>
-                  <div style={{fontSize:11,color:'#64748b'}}>{p.grade} / {p.targetGraduateSchool||'未設定'}</div>
-                </div>
-                <button onClick={()=>assignExisting(p.id)}
-                  style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>
-                  担当に追加
-                </button>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>週の目標時間（h）</label>
+                {inp('weeklyTargetHours','number','')}
               </div>
-            </Card>
-          ))}
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>累計目標時間（h）</label>
+                {inp('totalHoursGoal','number','')}
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={addStudent} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>追加する</button>
+              <button onClick={()=>setAddMode(false)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>閉じる</button>
+            </div>
+          </Card>
         </div>
       )}
+      <StudentList
+        profiles={profiles}
+        allSubjects={allSubjects||[]} allSchedules={allSchedules||[]} allDailyRecs={allDailyRecs||[]}
+        instructorNotes={instructorNotes||[]}
+        onSelect={setSelectedId}
+      />
     </div>
   );
 }
@@ -2062,7 +2019,7 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
         <div style={{fontSize:11,fontWeight:700,opacity:.7,letterSpacing:.8,marginBottom:3}}>ADMIN</div>
         <div style={{fontSize:20,fontWeight:800,marginBottom:12}}>管理者ダッシュボード</div>
         <div style={{display:'flex',borderTop:'1px solid rgba(255,255,255,.15)'}}>
-          {[['students','生徒'],['instructors','講師'],['assignments','担当割当']].map(([id,lbl])=>(
+          {[['students','生徒'],['instructors','講師']].map(([id,lbl])=>(
             <button key={id} onClick={()=>{setTab(id);setAddMode(null);}} style={{...tabStyle(id),color:tab===id?'#fff':'rgba(255,255,255,.6)',borderBottomColor:tab===id?'#fff':'transparent',padding:'10px 14px'}}>{lbl}</button>
           ))}
         </div>
@@ -2421,24 +2378,17 @@ function SupabaseApp(){
         setSubjectsRaw(su.data||[]);setSchedulesRaw(sc.data||[]);
         setDailyRecsRaw(dr.data||[]);setTasksRaw(ta.data||[]);setMyNotes(no.data||[]);
       }else if(u.role==='instructor'){
-        const{data:is}=await sb.from('instructor_students').select('*').eq('instructorUserId',uid);
-        const sids=(is||[]).map(x=>x.studentId);
-        setInstructorStudentsRaw(is||[]);
-        const{data:allProf}=await sb.from('student_profiles').select('*');
-        setInstructorAllProfilesRaw(allProf||[]);
-        if(sids.length){
-          const[pr,su,sc,dr,ta,no]=await Promise.all([
-            sb.from('student_profiles').select('*').in('id',sids),
-            sb.from('subjects').select('*').in('studentId',sids),
-            sb.from('schedules').select('*').in('studentId',sids),
-            sb.from('daily_records').select('*').in('studentId',sids),
-            sb.from('tasks').select('*').in('studentId',sids),
-            sb.from('instructor_notes').select('*').eq('instructorUserId',uid),
-          ]);
-          setStudentProfilesRaw(pr.data||[]);setAllSubjectsRaw(su.data||[]);
-          setAllSchedulesRaw(sc.data||[]);setAllDailyRecsRaw(dr.data||[]);
-          setAllTasksInstRaw(ta.data||[]);setInstructorNotesRaw(no.data||[]);
-        }
+        const[pr,su,sc,dr,ta,no]=await Promise.all([
+          sb.from('student_profiles').select('*'),
+          sb.from('subjects').select('*'),
+          sb.from('schedules').select('*'),
+          sb.from('daily_records').select('*'),
+          sb.from('tasks').select('*'),
+          sb.from('instructor_notes').select('*').eq('instructorUserId',uid),
+        ]);
+        setStudentProfilesRaw(pr.data||[]);setAllSubjectsRaw(su.data||[]);
+        setAllSchedulesRaw(sc.data||[]);setAllDailyRecsRaw(dr.data||[]);
+        setAllTasksInstRaw(ta.data||[]);setInstructorNotesRaw(no.data||[]);
       }else{
         const[us,pr,is,su,sc,dr,no,ta]=await Promise.all([
           sb.from('users').select('*'),
@@ -2513,7 +2463,7 @@ function SupabaseApp(){
   if(currentRole==='instructor')return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
-      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorStudents={instructorStudents} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setInstructorStudents={setInstructorStudentsDb} allStudentProfiles={instructorAllProfiles} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb}/>
+      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb}/>
     </div>
   );
   return(
@@ -2648,12 +2598,9 @@ function App(){
           allSubjects={allSubjects}
           allSchedules={allSchedules}
           allDailyRecs={allDailyRecs}
-          instructorStudents={instructorStudents}
           instructorNotes={instructorNotes}
           setInstructorNotes={setInstructorNotes}
           setStudentProfiles={setStudentProfiles}
-          setInstructorStudents={setInstructorStudents}
-          allStudentProfiles={studentProfiles}
           setAllSubjects={setAllSubjects}
           setAllSchedules={setAllSchedules}
           allTasks={allTasks}
