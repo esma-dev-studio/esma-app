@@ -1,0 +1,2489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>院試サポート — ESMA</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{background:#f0f4f8;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic UI',sans-serif;color:#1e293b;min-height:100vh}
+    input,textarea,button,select{font-family:inherit}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+    input:focus,textarea:focus{outline:none;border-color:#6366f1!important;box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useCallback } = React;
+
+/* ─── 定数 ─────────────────────────────────────── */
+const BRAND='#6366f1', BRAND_DARK='#4f46e5', BRAND_LIGHT='#eef2ff';
+const S_META={
+  not_started:{label:'未着手',dot:'#94a3b8',bg:'#f8fafc',text:'#64748b',border:'#e2e8f0',ring:'#94a3b8'},
+  in_progress: {label:'進行中',dot:'#3b82f6',bg:'#eff6ff',text:'#2563eb',border:'#bfdbfe',ring:'#3b82f6'},
+  completed:   {label:'完了',  dot:'#10b981',bg:'#f0fdf4',text:'#059669',border:'#a7f3d0',ring:'#10b981'},
+  delayed:     {label:'遅延',  dot:'#ef4444',bg:'#fff1f2',text:'#dc2626',border:'#fecaca',ring:'#ef4444'},
+};
+const SUBJ_COLORS=['#6366f1','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#06b6d4'];
+const DOW_LABELS=['日','月','火','水','木','金','土'];
+
+/* ─── 日付ユーティリティ ─────────────────────────── */
+const getToday  = ()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; };
+const fmt       = d=>(d instanceof Date?d:new Date(d+'T00:00:00')).toISOString().split('T')[0];
+const addDays   = (d,n)=>{ const r=d instanceof Date?new Date(d):new Date(d+'T00:00:00'); r.setDate(r.getDate()+n); return r; };
+const todayStr  = ()=>fmt(getToday());
+const daysUntil = s=>Math.ceil((new Date(s+'T00:00:00')-getToday())/86400000);
+const weekStart = ()=>{ const d=getToday(); d.setDate(d.getDate()-d.getDay()); return fmt(d); };
+
+/* ─── 初期データ ─────────────────────────────────── */
+const INIT_CFG={
+  targetGraduateSchool:'○○大学大学院',department:'情報工学専攻',
+  examDate:'2026-08-20',startDate:new Date().toISOString().split('T')[0],
+  weekdayStudyHours:3,weekendStudyHours:6,weeklyTargetHours:21,totalHoursGoal:500
+};
+const INIT_SUBJECTS=[
+  {id:'s1',name:'数学',    importance:5,currentLevel:3,targetLevel:5,color:'#6366f1'},
+  {id:'s2',name:'英語',    importance:4,currentLevel:3,targetLevel:4,color:'#10b981'},
+  {id:'s3',name:'専門科目',importance:5,currentLevel:2,targetLevel:5,color:'#f59e0b'},
+  {id:'s4',name:'研究計画',importance:4,currentLevel:2,targetLevel:4,color:'#3b82f6'},
+  {id:'s5',name:'面接対策',importance:3,currentLevel:1,targetLevel:4,color:'#ef4444'},
+];
+const SCHED_DEF={
+  s1:[2.0,1.5,1.5,1.5,1.5,1.5,2.0],
+  s2:[1.0,0.5,0.5,0.5,0.5,0.5,1.0],
+  s3:[2.0,1.0,1.0,1.0,1.0,1.0,2.0],
+  s4:[1.0,0.5,0.5,0.5,0.5,0.5,1.0],
+  s5:[0.5,0.0,0.0,0.0,0.0,0.0,0.5],
+};
+const makeSchedules=(sid)=>Array.from({length:7},(_,dow)=>{
+  const h=(SCHED_DEF[sid]||Array(7).fill(0))[dow];
+  return{id:`sch-${sid}-${dow}`,subjectId:sid,dayOfWeek:dow,targetHours:h,enabled:h>0};
+});
+const INIT_SCHEDULES=INIT_SUBJECTS.flatMap(s=>makeSchedules(s.id));
+const T0=getToday(), _d=n=>fmt(addDays(T0,n));
+const INIT_TASKS=[
+  {id:'t1',subjectId:'s1',title:'線形代数：行列計算',   category:'基礎理解',plannedDate:_d(0),dueDate:_d(7), estimatedHours:2,  actualHours:0,priority:5,status:'not_started',progress:0,understandingLevel:0,memo:''},
+  {id:'t2',subjectId:'s1',title:'微積分：偏微分',       category:'問題演習',plannedDate:_d(5),dueDate:_d(14),estimatedHours:2.5,actualHours:0,priority:4,status:'not_started',progress:0,understandingLevel:0,memo:''},
+  {id:'t3',subjectId:'s2',title:'英語：長文読解',       category:'英語',    plannedDate:_d(2),dueDate:_d(12),estimatedHours:2,  actualHours:0,priority:4,status:'not_started',progress:0,understandingLevel:0,memo:''},
+  {id:'t4',subjectId:'s3',title:'専門科目：基礎理論',   category:'基礎理解',plannedDate:_d(0),dueDate:_d(8), estimatedHours:4,  actualHours:0,priority:5,status:'not_started',progress:0,understandingLevel:0,memo:''},
+  {id:'t5',subjectId:'s4',title:'研究計画：テーマ整理', category:'研究計画',plannedDate:_d(4),dueDate:_d(15),estimatedHours:3,  actualHours:0,priority:4,status:'not_started',progress:0,understandingLevel:0,memo:''},
+];
+
+/* ─── ステータス計算ヘルパー ─────────────────────── */
+const r2=(n)=>Math.round(n*100)/100;
+const calcRecord=(plannedH,actualH)=>{
+  const p=r2(plannedH), a=r2(actualH);
+  if(a>p)   return{status:'over',    unmetHours:0,      surplusHours:r2(a-p)};
+  if(a===p) return{status:'done',    unmetHours:0,      surplusHours:0};
+  if(a>0)   return{status:'partial', unmetHours:r2(p-a),surplusHours:0};
+  return          {status:'skipped', unmetHours:p,      surplusHours:0};
+};
+const genDoneOpts=(plannedH)=>{
+  const opts=[];
+  for(let h=Math.max(0.5,r2(plannedH-0.5));h<=r2(plannedH+1.5)+0.01;h=r2(h+0.5)){
+    opts.push(r2(h)); if(opts.length>=6)break;
+  }
+  return opts;
+};
+const genPartialOpts=(plannedH)=>{
+  const opts=[];
+  for(let h=0.5;h<plannedH-0.01;h=r2(h+0.5)){
+    opts.push(r2(h)); if(opts.length>=6)break;
+  }
+  return opts.length?opts:[0.5];
+};
+// 4状態定義: over=前倒し／done=達成／partial=未達／skipped=未実施／null=未記録
+const getStatusDisplay=(rec)=>{
+  if(!rec)return{label:'未記録',color:'#3b82f6',bg:'#eff6ff',border:'#bfdbfe'};
+  switch(rec.status){
+    case 'over':    return{label:`+${r2(rec.surplusHours||0).toFixed(1)}h 前倒し 🎉`,color:'#7c3aed',bg:'#f5f3ff',border:'#ddd6fe'};
+    case 'done':    return{label:`✓ 達成 ${rec.actualHours}h`,color:'#059669',bg:'#f0fdf4',border:'#a7f3d0'};
+    case 'partial': return{label:`未達 -${r2(rec.unmetHours||0).toFixed(1)}h`,color:'#d97706',bg:'#fffbeb',border:'#fde68a'};
+    case 'skipped': return{label:'未実施',color:'#94a3b8',bg:'#f8fafc',border:'#e2e8f0'};
+    default:        return{label:'記録済み',color:'#64748b',bg:'#f8fafc',border:'#e2e8f0'};
+  }
+};
+
+/* ─── カスタムフック ──────────────────────────────── */
+function useStorage(key,init){
+  const[v,s]=useState(()=>{try{const x=localStorage.getItem(key);return x?JSON.parse(x):init;}catch{return init;}});
+  useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(v));}catch(e){}},[key,v]);
+  return[v,s];
+}
+function useIsMobile(){
+  const[m,s]=useState(()=>window.innerWidth<640);
+  useEffect(()=>{const h=()=>s(window.innerWidth<640);window.addEventListener('resize',h);return()=>window.removeEventListener('resize',h);},[]);
+  return m;
+}
+
+/* ─── 共通UI ─────────────────────────────────────── */
+const Card=({children,style,onClick})=><div onClick={onClick} style={{background:'#fff',borderRadius:16,border:'1px solid #e8ecf0',boxShadow:'0 2px 8px rgba(0,0,0,.05)',padding:18,...style}}>{children}</div>;
+const Sec=({children,style})=><div style={{fontWeight:700,fontSize:12,color:'#64748b',textTransform:'uppercase',letterSpacing:.8,marginBottom:12,...style}}>{children}</div>;
+
+/* ─── 科目カード（今日の記録） ────────────────────── */
+function SubjectDayCard({subj,plannedH,record,onRecord}){
+  const[mode,setMode]=useState(null);
+  const[pickerInit,setPickerInit]=useState(null);
+  const[selH,setSelH]=useState(null);
+  const[showCustom,setShowCustom]=useState(false);
+  const[customH,setCustomH]=useState('');
+  const[showDetail,setShowDetail]=useState(false);
+  const[detail,setDetail]=useState({ul:3,memo:''});
+  const isMobile=useIsMobile();
+
+  const resetPicker=()=>{setMode(null);setPickerInit(null);setSelH(null);setShowCustom(false);setCustomH('');};
+  const startMode=(m,init)=>{
+    setMode(m);
+    setPickerInit(init!=null?init:(m==='done'?plannedH:m==='partial'?genPartialOpts(plannedH)[0]:plannedH));
+    setSelH(null); setShowCustom(false); setCustomH('');
+  };
+  const getEffectiveH=()=>{
+    if(showCustom&&customH!=='')return parseFloat(customH)||0;
+    return selH!=null?selH:pickerInit;
+  };
+  const doRecord=(actualH)=>{
+    const h=Math.max(0,r2(parseFloat(actualH)||0));
+    const calc=calcRecord(plannedH,h);
+    const now=new Date().toISOString();
+    onRecord({actualHours:h,...calc,...(showDetail?{ul:detail.ul,memo:detail.memo}:{})},now);
+    resetPicker();
+  };
+
+  /* ── 記録済み表示 ── */
+  if(record&&mode===null){
+    const sd=getStatusDisplay(record);
+    return(
+      <div style={{background:'#fff',borderRadius:14,border:`1px solid ${sd.border}`,borderLeft:`4px solid ${subj.color}`,padding:'14px 16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{width:10,height:10,borderRadius:'50%',background:subj.color,flexShrink:0}}/>
+            <span style={{fontSize:14,fontWeight:700,color:'#0f172a'}}>{subj.name}</span>
+          </div>
+          <span style={{fontSize:11,fontWeight:700,color:sd.color,background:sd.bg,border:`1px solid ${sd.border}`,padding:'3px 10px',borderRadius:20}}>{sd.label}</span>
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
+          {[
+            ['予定',`${plannedH}h`,'#64748b'],
+            ['実績',`${record.actualHours}h`,record.status==='over'?'#7c3aed':record.status==='done'?'#059669':'#334155'],
+            ...(record.unmetHours>0?[['未達',`-${r2(record.unmetHours).toFixed(1)}h`,'#d97706']]:[]),
+            ...(record.surplusHours>0?[['前倒し',`+${r2(record.surplusHours).toFixed(1)}h`,'#7c3aed']]:[]),
+          ].map(([l,v,c])=>(
+            <div key={l} style={{textAlign:'center',background:'#f8fafc',borderRadius:8,padding:'5px 10px',border:'1px solid #f1f5f9'}}>
+              <div style={{fontSize:13,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
+              <div style={{fontSize:9,color:'#94a3b8',marginTop:1}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>startMode('edit',record.actualHours)} style={{flex:1,padding:'8px 14px',borderRadius:8,border:`1px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontSize:12,fontWeight:700,cursor:'pointer'}}>編集する</button>
+          <button onClick={()=>setShowDetail(p=>!p)} style={{padding:'8px 12px',borderRadius:8,border:'1px solid #e2e8f0',background:'#f8fafc',color:'#94a3b8',fontSize:11,cursor:'pointer'}}>{showDetail?'▲':'詳細 ▼'}</button>
+        </div>
+        {showDetail&&(
+          <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
+            <div style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:6}}>理解度（1〜5）</div>
+            <div style={{display:'flex',gap:6,marginBottom:10}}>
+              {[1,2,3,4,5].map(n=><button key={n} onClick={()=>setDetail(p=>({...p,ul:n}))} style={{flex:1,height:34,borderRadius:7,border:'none',background:detail.ul>=n?BRAND:'#f1f5f9',color:detail.ul>=n?'#fff':'#94a3b8',fontWeight:700,cursor:'pointer'}}>{n}</button>)}
+            </div>
+            <textarea value={detail.memo} onChange={e=>setDetail(p=>({...p,memo:e.target.value}))} rows={2} placeholder="気づきや課題..." style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12,resize:'vertical',fontFamily:'inherit'}}/>
+            <button onClick={()=>onRecord({...record,ul:detail.ul,memo:detail.memo},new Date().toISOString())} style={{marginTop:8,width:'100%',padding:'8px',borderRadius:8,border:`1px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontWeight:700,fontSize:12,cursor:'pointer'}}>メモを保存</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ── 時間選択ピッカー ── */
+  if(mode==='done'||mode==='partial'||mode==='edit'){
+    const opts=mode==='partial'?genPartialOpts(plannedH):genDoneOpts(plannedH);
+    const effectiveH=getEffectiveH()??pickerInit??plannedH;
+    const calc=calcRecord(plannedH,effectiveH);
+    const isOver=calc.status==='over', isDone=calc.status==='done';
+    const modeTitle=mode==='edit'?'実績時間を編集':mode==='done'?'実績時間を選択（できた）':'実績時間を選択（少しやった）';
+    return(
+      <div style={{background:isOver?'#f5f3ff':'#fffbeb',borderRadius:14,border:`1.5px solid ${isOver?'#ddd6fe':'#fde68a'}`,borderLeft:`4px solid ${subj.color}`,padding:'14px 16px'}}>
+        <div style={{fontSize:13,fontWeight:700,color:'#0f172a',marginBottom:2}}>{subj.name}</div>
+        <div style={{fontSize:11,color:'#64748b',marginBottom:10}}>{modeTitle}（予定 {plannedH}h）</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+          {opts.map(h=>{
+            const isSel=!showCustom&&Math.abs((selH??pickerInit??plannedH)-h)<0.01;
+            const isP=Math.abs(h-plannedH)<0.01, isO=h>plannedH;
+            return(
+              <button key={h} onClick={()=>{setSelH(h);setShowCustom(false);setCustomH('');}}
+                style={{flex:'1 0 48px',padding:'10px 4px',borderRadius:10,
+                  border:isSel?`2px solid ${isO?'#7c3aed':BRAND}`:'1.5px solid #e2e8f0',
+                  background:isSel?(isO?'#7c3aed':BRAND):'#f8fafc',
+                  color:isSel?'#fff':isO?'#7c3aed':'#334155',
+                  fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                <span>{h}h</span>
+                {isP&&<span style={{fontSize:8,opacity:.7,color:isSel?'rgba(255,255,255,.8)':'#059669'}}>予定</span>}
+                {isO&&<span style={{fontSize:8,color:isSel?'rgba(255,255,255,.75)':'#7c3aed'}}>+{r2(h-plannedH).toFixed(1)}</span>}
+              </button>
+            );
+          })}
+          <button onClick={()=>setShowCustom(p=>!p)}
+            style={{flex:'1 0 48px',padding:'10px 4px',borderRadius:10,border:`1.5px solid ${showCustom?BRAND:'#e2e8f0'}`,background:showCustom?BRAND_LIGHT:'#f8fafc',color:showCustom?BRAND:'#64748b',fontWeight:700,fontSize:12,cursor:'pointer'}}>
+            手入力
+          </button>
+        </div>
+        {showCustom&&(
+          <div style={{display:'flex',gap:8,marginBottom:10,alignItems:'center'}}>
+            <input type="number" min="0" max="24" step="0.5" value={customH} onChange={e=>setCustomH(e.target.value)} placeholder="例: 2.5" autoFocus
+              style={{flex:1,padding:'11px 12px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:14}}/>
+            <span style={{fontSize:13,color:'#64748b',flexShrink:0}}>h</span>
+          </div>
+        )}
+        {effectiveH>0&&(
+          <div style={{fontSize:12,marginBottom:10,textAlign:'center',fontWeight:700,padding:'7px',borderRadius:8,
+            background:isOver?'#ede9fe':isDone?'#f0fdf4':'#fffbeb',
+            color:isOver?'#7c3aed':isDone?'#059669':'#d97706'}}>
+            {isOver?`予定より +${calc.surplusHours.toFixed(1)}h 前倒し！🎉`:isDone?`予定通り ${effectiveH}h 達成！✓`:`予定より -${calc.unmetHours.toFixed(1)}h`}
+          </div>
+        )}
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>doRecord(effectiveH)} style={{flex:1,padding:'12px',borderRadius:10,border:'none',background:isOver?'#7c3aed':BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>
+            {mode==='edit'?'更新する':'記録する'}
+          </button>
+          <button onClick={resetPicker} style={{padding:'12px 14px',borderRadius:10,border:'1px solid #e2e8f0',background:'#f8fafc',color:'#64748b',cursor:'pointer',fontSize:12}}>キャンセル</button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── デフォルト：3ボタン ── */
+  const btnBase={flex:1,padding:isMobile?'14px 4px':'13px 4px',borderRadius:10,border:'none',fontWeight:800,fontSize:isMobile?13:12,cursor:'pointer',lineHeight:1.3};
+  return(
+    <div style={{background:'#fff',borderRadius:14,border:'1px solid #e8ecf0',borderLeft:`4px solid ${subj.color}`,padding:'14px 16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:10,height:10,borderRadius:'50%',background:subj.color,flexShrink:0}}/>
+          <span style={{fontSize:14,fontWeight:700,color:'#0f172a'}}>{subj.name}</span>
+        </div>
+        <span style={{fontSize:12,color:'#64748b',background:'#f8fafc',padding:'3px 10px',borderRadius:20,border:'1px solid #e8ecf0'}}>予定 {plannedH}h</span>
+      </div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={()=>startMode('done',plannedH)} style={{...btnBase,background:'#10b981',color:'#fff'}}>✓<br/>できた</button>
+        <button onClick={()=>startMode('partial',genPartialOpts(plannedH)[0])} style={{...btnBase,background:'#fffbeb',color:'#d97706',border:'1.5px solid #fde68a'}}>△<br/>少しやった</button>
+        <button onClick={()=>doRecord(0)} style={{...btnBase,background:'#f8fafc',color:'#64748b',border:'1.5px solid #e2e8f0'}}>✗<br/>できなかった</button>
+      </div>
+      <button onClick={()=>setShowDetail(p=>!p)} style={{marginTop:10,width:'100%',padding:'7px',borderRadius:8,border:'1px solid #e2e8f0',background:'transparent',color:'#94a3b8',fontSize:11,cursor:'pointer'}}>
+        {showDetail?'▲ 詳細入力を閉じる':'詳しく記録する ▼'}
+      </button>
+      {showDetail&&(
+        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #f1f5f9'}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:6}}>理解度（1〜5）</div>
+          <div style={{display:'flex',gap:6,marginBottom:10}}>
+            {[1,2,3,4,5].map(n=><button key={n} onClick={()=>setDetail(p=>({...p,ul:n}))} style={{flex:1,height:34,borderRadius:7,border:'none',background:detail.ul>=n?BRAND:'#f1f5f9',color:detail.ul>=n?'#fff':'#94a3b8',fontWeight:700,cursor:'pointer'}}>{n}</button>)}
+          </div>
+          <textarea value={detail.memo} onChange={e=>setDetail(p=>({...p,memo:e.target.value}))} rows={2} placeholder="気づきや課題を記録..." style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12,resize:'vertical',fontFamily:'inherit'}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── 今日の学習 ──────────────────────────────────── */
+function TodayView({subjects,schedules,dailyRecs,setDailyRecs}){
+  const today=todayStr();
+  const todayDOW=getToday().getDay();
+  const todaySubjects=useMemo(()=>
+    schedules.filter(sc=>sc.dayOfWeek===todayDOW&&sc.enabled&&sc.targetHours>0)
+      .map(sc=>({...subjects.find(s=>s.id===sc.subjectId),plannedH:sc.targetHours}))
+      .filter(s=>s.id)
+  ,[schedules,subjects,todayDOW]);
+  const getRec=useCallback(sid=>dailyRecs.find(r=>r.subjectId===sid&&r.date===today),[dailyRecs,today]);
+  const handleRecord=useCallback((subj,data,now)=>{
+    setDailyRecs(prev=>{
+      const idx=prev.findIndex(r=>r.subjectId===subj.id&&r.date===today);
+      const existing=idx>=0?prev[idx]:null;
+      const rec={
+        id:existing?existing.id:`dr-${subj.id}-${today}-${Date.now()}`,
+        subjectId:subj.id,date:today,plannedHours:subj.plannedH,
+        actualHours:data.actualHours,
+        status:data.status||calcRecord(subj.plannedH,data.actualHours).status,
+        unmetHours:data.unmetHours??0,surplusHours:data.surplusHours??0,
+        createdAt:existing?existing.createdAt:now,editedAt:now,ul:data.ul,memo:data.memo,
+      };
+      return idx>=0?prev.map((r,i)=>i===idx?rec:r):[...prev,rec];
+    });
+  },[today,setDailyRecs]);
+
+  const totalPlanned=useMemo(()=>todaySubjects.reduce((a,s)=>a+s.plannedH,0),[todaySubjects]);
+  const todayRecs=useMemo(()=>dailyRecs.filter(r=>r.date===today),[dailyRecs,today]);
+  const totalActual=useMemo(()=>todayRecs.reduce((a,r)=>a+r.actualHours,0),[todayRecs]);
+  const totalUnmet=useMemo(()=>todayRecs.reduce((a,r)=>a+(r.unmetHours||0),0),[todayRecs]);
+  const totalSurplus=useMemo(()=>todayRecs.reduce((a,r)=>a+(r.surplusHours||0),0),[todayRecs]);
+  const achPct=totalPlanned>0?Math.min(200,Math.round(totalActual/totalPlanned*100)):0;
+  const recordedCount=useMemo(()=>todaySubjects.filter(s=>getRec(s.id)).length,[todaySubjects,getRec]);
+  const unrecordedCount=todaySubjects.length-recordedCount;
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <Card style={{background:BRAND_LIGHT,border:`1px solid ${BRAND}30`,padding:'16px 18px'}}>
+        <div style={{fontWeight:800,fontSize:15,color:BRAND_DARK,marginBottom:10}}>
+          📚 今日の学習 — {today}（{DOW_LABELS[todayDOW]}曜日）
+        </div>
+        {/* 予定/実績/達成率 */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:8}}>
+          {[['予定',`${totalPlanned}h`,'#334155'],['実績',`${totalActual.toFixed(1)}h`,BRAND],['達成率',`${achPct}%`,achPct>=100?'#059669':achPct>=80?'#d97706':BRAND]].map(([l,v,c])=>(
+            <div key={l} style={{textAlign:'center',background:'#fff',borderRadius:10,padding:'10px 4px',border:'1px solid #e8ecf0'}}>
+              <div style={{fontSize:17,fontWeight:900,color:c,lineHeight:1}}>{v}</div>
+              <div style={{fontSize:9,color:'#94a3b8',marginTop:3}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        {/* 達成バー */}
+        <div style={{height:6,background:'#e0e7ff',borderRadius:4,overflow:'hidden',marginBottom:8}}>
+          <div style={{height:'100%',width:`${Math.min(100,achPct)}%`,background:achPct>=100?'#10b981':BRAND,borderRadius:4,transition:'width .5s'}}/>
+        </div>
+        {/* ステータスバッジ行 */}
+        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          <span style={{fontSize:11,background:'#f0fdf4',color:'#059669',border:'1px solid #a7f3d0',borderRadius:20,padding:'3px 10px',fontWeight:600}}>記録済み {recordedCount}科目</span>
+          {unrecordedCount>0&&<span style={{fontSize:11,background:'#eff6ff',color:'#3b82f6',border:'1px solid #bfdbfe',borderRadius:20,padding:'3px 10px',fontWeight:600}}>未記録 {unrecordedCount}科目</span>}
+          {totalUnmet>0&&<span style={{fontSize:11,background:'#fffbeb',color:'#d97706',border:'1px solid #fde68a',borderRadius:20,padding:'3px 10px',fontWeight:600}}>未達 {totalUnmet.toFixed(1)}h</span>}
+          {totalSurplus>0&&<span style={{fontSize:11,background:'#f5f3ff',color:'#7c3aed',border:'1px solid #ddd6fe',borderRadius:20,padding:'3px 10px',fontWeight:600}}>前倒し +{totalSurplus.toFixed(1)}h</span>}
+        </div>
+        {unrecordedCount>0&&(
+          <div style={{marginTop:8,fontSize:11,color:'#64748b',background:'#fff',borderRadius:8,padding:'7px 10px',border:'1px solid #e8ecf0'}}>
+            💡 未記録の科目が{unrecordedCount}件あります。記録すると達成率が更新されます。
+          </div>
+        )}
+      </Card>
+      {todaySubjects.length===0?(
+        <Card style={{textAlign:'center',padding:'40px 20px'}}>
+          <div style={{fontSize:28,marginBottom:8}}>📅</div>
+          <div style={{fontWeight:700,fontSize:15,color:'#334155'}}>{DOW_LABELS[todayDOW]}曜日の学習予定はありません</div>
+          <div style={{fontSize:12,color:'#94a3b8',marginTop:6}}>設定タブで曜日別スケジュールを設定してください</div>
+        </Card>
+      ):todaySubjects.map(subj=>(
+        <SubjectDayCard key={subj.id} subj={subj} plannedH={subj.plannedH} record={getRec(subj.id)} onRecord={(data,now)=>handleRecord(subj,data,now)}/>
+      ))}
+    </div>
+  );
+}
+
+/* ─── 今日の達成ゲージ ───────────────────────────── */
+function TodayGauge({planned,actual,surplus,unmet}){
+  const pct=planned>0?actual/planned*100:0;
+  const dispPct=Math.round(pct);
+  const barWidth=Math.min(150,pct);
+  const isOver=surplus>0, isDone=Math.abs(actual-planned)<0.01&&actual>0;
+  const barColor=isOver?'linear-gradient(90deg,#6366f1,#7c3aed)':isDone?'#10b981':pct>=80?'#f59e0b':pct>=50?'#f97316':'#ef4444';
+  const textColor=isOver?'#7c3aed':isDone?'#059669':pct>=80?'#d97706':'#dc2626';
+  return(
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}}>
+        <span style={{fontSize:11,fontWeight:700,color:'#64748b'}}>今日の達成率</span>
+        <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+          <span style={{fontSize:26,fontWeight:900,color:textColor,lineHeight:1}}>{dispPct}%</span>
+          {isOver&&<span style={{fontSize:12,color:'#7c3aed'}}>🎉</span>}
+        </div>
+      </div>
+      <div style={{height:16,background:'#f1f5f9',borderRadius:8,overflow:'visible',position:'relative',marginBottom:6}}>
+        <div style={{position:'absolute',left:`${100/1.5}%`,top:-3,bottom:-3,width:2,background:'#94a3b8',borderRadius:1,zIndex:2}}/>
+        <div style={{height:'100%',width:`${barWidth/1.5}%`,background:barColor,borderRadius:8,transition:'width .6s ease',position:'relative',zIndex:1}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#64748b'}}>
+        <span>予定 {planned}h ｜ 実績 {actual.toFixed(1)}h</span>
+        <span style={{fontWeight:700,color:isOver?'#7c3aed':isDone?'#059669':unmet>0?'#d97706':'#64748b'}}>
+          {isOver?`+${surplus.toFixed(1)}h 前倒し！`:isDone?'予定達成！':unmet>0?`あと ${unmet.toFixed(1)}h`:''}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── 今週の棒グラフ ─────────────────────────────── */
+function WeekBarChart({weekDays,schedules,dailyRecs,today}){
+  const data=weekDays.map(d=>{
+    const dow=new Date(d+'T00:00:00').getDay();
+    const planned=schedules.filter(sc=>sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0).reduce((a,sc)=>a+sc.targetHours,0);
+    const actual=dailyRecs.filter(r=>r.date===d).reduce((a,r)=>a+r.actualHours,0);
+    return{d,dow,label:DOW_LABELS[dow],planned,actual,isPast:d<=today,isToday:d===today};
+  });
+  const maxH=Math.max(...data.map(d=>Math.max(d.planned,d.actual)),1);
+  const BAR_H=72;
+  return(
+    <div>
+      <div style={{display:'flex',alignItems:'flex-end',gap:3}}>
+        {data.map(({d,label,planned,actual,isPast,isToday})=>{
+          const pH=(planned/maxH)*BAR_H, aH=Math.min((actual/maxH)*BAR_H,BAR_H+10);
+          const isAhead=isPast&&actual>=planned&&planned>0, isPartial=isPast&&actual>0&&actual<planned;
+          const aColor=isAhead?'#10b981':isPartial?'#f59e0b':'#f1f5f9';
+          const diffVal=isPast&&planned>0?r2(actual-planned):null;
+          return(
+            <div key={d} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}}>
+              <div style={{fontSize:8,fontWeight:700,height:13,color:diffVal>0?'#059669':diffVal<0?'#d97706':'transparent',textAlign:'center',overflow:'hidden'}}>
+                {diffVal!=null&&diffVal!==0?(diffVal>0?'+':'')+diffVal.toFixed(1):''}
+              </div>
+              <div style={{width:'100%',display:'flex',gap:2,alignItems:'flex-end',height:BAR_H}}>
+                <div style={{flex:1,height:Math.max(2,pH),background:isToday?`${BRAND}40`:'#e2e8f0',borderRadius:'2px 2px 0 0'}}/>
+                {isPast&&<div style={{flex:1,height:Math.max(aH>0?aH:0,0),background:aColor,borderRadius:'2px 2px 0 0',transition:'height .3s'}}/>}
+              </div>
+              <div style={{fontSize:9,color:isToday?BRAND:'#94a3b8',fontWeight:isToday?700:400,marginTop:3}}>{label}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
+        {[['#e2e8f0','予定'],['#10b981','達成'],['#f59e0b','一部実施']].map(([c,l])=>(
+          <div key={l} style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:10,height:8,background:c,borderRadius:2}}/><span style={{fontSize:10,color:'#94a3b8'}}>{l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 累計折れ線グラフ（startDate対応） ──────────── */
+function CumChart({cumData}){
+  if(!cumData||cumData.length<2)return(
+    <div style={{textAlign:'center',padding:'18px 12px',background:'#f8fafc',borderRadius:10,border:'1px solid #e8ecf0'}}>
+      <div style={{fontSize:13,color:'#64748b',lineHeight:1.7}}>
+        今日から学習記録を開始しました。<br/>
+        数日分の記録がたまると、累計ペースを表示します。
+      </div>
+    </div>
+  );
+  const maxVal=Math.max(...cumData.map(p=>Math.max(p.cumTarget,p.cumActual)),1);
+  const W=300,H=80,PX=8,PY=6, N=cumData.length;
+  const xi=(i)=>PX+(i/(N-1))*(W-PX*2);
+  const yv=(v)=>H-PY-(v/maxVal)*(H-PY*2);
+  const tPts=cumData.map((p,i)=>`${xi(i)},${yv(p.cumTarget)}`).join(' ');
+  const aPts=cumData.map((p,i)=>`${xi(i)},${yv(p.cumActual)}`).join(' ');
+  const last=cumData[cumData.length-1], isAhead=last.cumActual>=last.cumTarget;
+  const actColor=isAhead?'#10b981':BRAND;
+  return(
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:H}}>
+        <polyline points={tPts} fill="none" stroke="#cbd5e1" strokeWidth={1.5} strokeDasharray="4 2"/>
+        <polyline points={aPts} fill="none" stroke={actColor} strokeWidth={2.5}/>
+        <circle cx={xi(N-1)} cy={yv(last.cumActual)} r={4} fill={actColor}/>
+        <circle cx={xi(N-1)} cy={yv(last.cumTarget)} r={3} fill="#94a3b8"/>
+      </svg>
+      <div style={{display:'flex',gap:14,marginTop:4,alignItems:'center',flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:14,height:2,background:'#cbd5e1',borderRadius:1}}/><span style={{fontSize:10,color:'#94a3b8'}}>目標</span></div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:14,height:2,background:actColor,borderRadius:1}}/><span style={{fontSize:10,color:'#94a3b8'}}>実績</span></div>
+        <span style={{fontSize:11,fontWeight:700,color:isAhead?'#059669':'#d97706',marginLeft:'auto'}}>
+          {isAhead?`+${r2(last.cumActual-last.cumTarget).toFixed(1)}h 前倒し`:`-${r2(last.cumTarget-last.cumActual).toFixed(1)}h 遅れ`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── ペース差分メッセージ ───────────────────────── */
+function PaceSummary({cumTarget,cumActual}){
+  const diff=r2(cumActual-cumTarget), isAhead=diff>=0, absD=Math.abs(diff);
+  return(
+    <div style={{background:isAhead?'#f0fdf4':'#fffbeb',borderRadius:12,padding:'12px 14px',border:`1px solid ${isAhead?'#a7f3d0':'#fde68a'}`}}>
+      <div style={{fontSize:13,fontWeight:800,color:isAhead?'#059669':'#d97706',marginBottom:4}}>
+        {isAhead?`予定より +${absD.toFixed(1)}h 前倒し 🎉`:`予定より -${absD.toFixed(1)}h 遅れ`}
+      </div>
+      <div style={{fontSize:11,color:'#64748b',lineHeight:1.6}}>
+        {isAhead?'このペースを維持しましょう。余裕があれば苦手科目に充てましょう。'
+          :`今週あと ${absD.toFixed(1)}h 追加すれば予定ペースに戻れます。まず今日0.5hから始めましょう。`}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 科目別ペースグラフ ─────────────────────────── */
+function SubjectPaceChart({subjects,schedules,dailyRecs,weekDays,today}){
+  const data=subjects.map(s=>{
+    let planned=0;
+    weekDays.filter(d=>d<=today).forEach(d=>{
+      const dow=new Date(d+'T00:00:00').getDay();
+      const sc=schedules.find(sc2=>sc2.subjectId===s.id&&sc2.dayOfWeek===dow&&sc2.enabled&&sc2.targetHours>0);
+      if(sc)planned+=sc.targetHours;
+    });
+    const actual=dailyRecs.filter(r=>r.subjectId===s.id&&weekDays.includes(r.date)&&r.date<=today).reduce((a,r)=>a+r.actualHours,0);
+    const pct=planned>0?Math.min(160,actual/planned*100):0;
+    return{...s,planned,actual,pct};
+  }).filter(s=>s.planned>0||s.actual>0);
+  if(!data.length)return<div style={{fontSize:12,color:'#94a3b8',textAlign:'center',padding:'12px'}}>今週の学習データがまだありません</div>;
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+      {data.map(s=>{
+        const isLow=s.pct<50&&s.planned>0, isOver=s.pct>100;
+        const color=isOver?'#7c3aed':s.pct>=80?'#10b981':s.pct>=50?'#f59e0b':'#ef4444';
+        const recoverH=isLow?r2(Math.min(s.planned-s.actual,1.0)):0;
+        return(
+          <div key={s.id}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,alignItems:'center'}}>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:8,height:8,borderRadius:'50%',background:s.color}}/>
+                <span style={{fontSize:12,fontWeight:600,color:'#334155'}}>{s.name}</span>
+                {isLow&&<span style={{fontSize:9,color:'#dc2626',background:'#fff1f2',border:'1px solid #fecaca',padding:'1px 5px',borderRadius:6}}>要注意</span>}
+                {isOver&&<span style={{fontSize:9,color:'#7c3aed',background:'#f5f3ff',border:'1px solid #ddd6fe',padding:'1px 5px',borderRadius:6}}>前倒し</span>}
+              </div>
+              <div style={{display:'flex',alignItems:'baseline',gap:4}}>
+                <span style={{fontSize:13,fontWeight:700,color}}>{Math.round(s.pct)}%</span>
+                <span style={{fontSize:10,color:'#94a3b8'}}>{s.actual.toFixed(1)}/{s.planned.toFixed(1)}h</span>
+              </div>
+            </div>
+            <div style={{height:9,background:'#f1f5f9',borderRadius:5,overflow:'visible',position:'relative'}}>
+              {isOver&&<div style={{position:'absolute',left:`${100/1.6}%`,top:-2,bottom:-2,width:1.5,background:'#94a3b8',zIndex:2,borderRadius:1}}/>}
+              <div style={{height:'100%',width:`${s.pct/1.6}%`,background:color,borderRadius:5,transition:'width .4s'}}/>
+            </div>
+            {isLow&&s.planned>0&&<div style={{fontSize:10,color:'#d97706',marginTop:3}}>まずは今週あと {recoverH.toFixed(1)}h 取り組みましょう</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── ストリーク & モメンタム（今日を含む） ────── */
+function StudyMomentumCard({schedules,dailyRecs,today}){
+  const {streak,todayRecorded}=useMemo(()=>{
+    const todayRec=dailyRecs.find(r=>r.date===today&&r.actualHours>0);
+    let count=todayRec?1:0;
+    for(let i=1;i<=90;i++){
+      const d=fmt(addDays(getToday(),-i));
+      const dow=new Date(d+'T00:00:00').getDay();
+      const hasSch=schedules.some(sc=>sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0);
+      if(!hasSch)continue;
+      const rec=dailyRecs.find(r=>r.date===d);
+      if(rec&&rec.actualHours>0)count++;
+      else break;
+    }
+    return{streak:count,todayRecorded:!!todayRec};
+  },[schedules,dailyRecs,today]);
+
+  const {recent3,prev3}=useMemo(()=>{
+    let r=0,p=0;
+    for(let i=1;i<=3;i++) r+=dailyRecs.filter(x=>x.date===fmt(addDays(getToday(),-i))).reduce((a,x)=>a+x.actualHours,0);
+    for(let i=4;i<=6;i++) p+=dailyRecs.filter(x=>x.date===fmt(addDays(getToday(),-i))).reduce((a,x)=>a+x.actualHours,0);
+    return{recent3:r2(r),prev3:r2(p)};
+  },[dailyRecs]);
+  const momDiff=r2(recent3-prev3);
+  const momPct=prev3>0.01?Math.round(Math.abs(momDiff)/prev3*100):recent3>0?100:0;
+  const isUp=momDiff>0.05,isDown=momDiff<-0.05;
+  const momColor=isUp?'#059669':isDown?'#dc2626':'#64748b';
+
+  const {sessionsTotal,sessionsDone}=useMemo(()=>{
+    const ws=weekStart();
+    const weekDays=Array.from({length:7},(_,i)=>fmt(addDays(new Date(ws+'T00:00:00'),i)));
+    let total=0,done=0;
+    weekDays.filter(d=>d<=today).forEach(d=>{
+      const dow=new Date(d+'T00:00:00').getDay();
+      schedules.filter(sc=>sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0).forEach(sc=>{
+        total++;
+        const rec=dailyRecs.find(r=>r.subjectId===sc.subjectId&&r.date===d);
+        if(rec&&rec.actualHours>0)done++;
+      });
+    });
+    return{sessionsTotal:total,sessionsDone:done};
+  },[schedules,dailyRecs,today]);
+  const consistency=sessionsTotal>0?Math.round(sessionsDone/sessionsTotal*100):null;
+  const consColor=consistency===null?'#94a3b8':consistency>=80?'#059669':consistency>=50?'#d97706':'#dc2626';
+
+  const streakMsg=!todayRecorded&&streak>0
+    ?`昨日まで${streak}日連続。今日も記録すると${streak+1}日連続です！`
+    :streak>=14?'🏆 2週間連続！完全に習慣化されています！'
+    :streak>=7?'🔥 1週間継続中！このリズムで突き進もう！'
+    :streak>=3?'✨ 良いリズムが生まれています。今日も続けよう！'
+    :streak>=1?'💪 継続スタート！ストリークを伸ばしていこう！'
+    :'今日から再スタート！1日0.5hでも記録が大事です。';
+
+  return(
+    <Card style={{padding:'16px 18px'}}>
+      <Sec>⚡ 学習モメンタム</Sec>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:10}}>
+        <div style={{background:'#fff7ed',borderRadius:12,padding:'12px 6px',textAlign:'center',border:'1px solid #fed7aa'}}>
+          <div style={{fontSize:22,lineHeight:1}}>{streak>=7?'🔥':streak>=3?'✨':streak>=1?'💪':'😴'}</div>
+          <div style={{fontSize:26,fontWeight:900,color:'#ea580c',lineHeight:1.1,marginTop:2}}>{streak}</div>
+          <div style={{fontSize:9,color:'#9a3412',marginTop:2,lineHeight:1.3}}>連続<br/>学習日</div>
+        </div>
+        <div style={{background:isUp?'#f0fdf4':isDown?'#fff1f2':'#f8fafc',borderRadius:12,padding:'12px 6px',textAlign:'center',border:`1px solid ${isUp?'#bbf7d0':isDown?'#fecaca':'#e2e8f0'}`}}>
+          <div style={{fontSize:22,fontWeight:900,color:momColor,lineHeight:1.1,marginTop:4}}>{isUp?'↑':isDown?'↓':'→'}{momPct}%</div>
+          <div style={{fontSize:9,color:momColor,marginTop:4,lineHeight:1.3}}>直近3日<br/>vs 前3日</div>
+          <div style={{fontSize:8,color:'#94a3b8',marginTop:3}}>{prev3}h→{recent3}h</div>
+        </div>
+        <div style={{background:'#f0f9ff',borderRadius:12,padding:'12px 6px',textAlign:'center',border:'1px solid #bae6fd'}}>
+          <div style={{fontSize:26,fontWeight:900,color:consColor,lineHeight:1.1,marginTop:4}}>{consistency===null?'—':`${consistency}%`}</div>
+          <div style={{fontSize:9,color:'#0369a1',marginTop:4,lineHeight:1.3}}>今週の<br/>一貫性</div>
+          <div style={{fontSize:8,color:'#94a3b8',marginTop:3}}>{sessionsDone}/{sessionsTotal}コマ</div>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:'#475569',lineHeight:1.6,background:'#f8fafc',borderRadius:9,padding:'9px 12px'}}>{streakMsg}</div>
+    </Card>
+  );
+}
+
+/* ─── 学習カレンダー（ヒートマップ） ──────────── */
+function StudyHeatmap({schedules,dailyRecs,today}){
+  const WEEKS=5;
+  const days=useMemo(()=>Array.from({length:WEEKS*7},(_,i)=>fmt(addDays(getToday(),i-(WEEKS*7-1)))),[]);
+  const weeks=useMemo(()=>{const out=[];for(let w=0;w<WEEKS;w++)out.push(days.slice(w*7,(w+1)*7));return out;},[days]);
+  const dayData=useMemo(()=>days.map(d=>{
+    const dow=new Date(d+'T00:00:00').getDay();
+    const planned=schedules.filter(sc=>sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0).reduce((a,sc)=>a+sc.targetHours,0);
+    const actual=dailyRecs.filter(r=>r.date===d).reduce((a,r)=>a+r.actualHours,0);
+    const isFuture=d>today;
+    let status,pct=0;
+    if(isFuture){status='future';}
+    else if(planned===0){status=actual>0?'bonus':'none';}
+    else{pct=actual/planned;status=actual>=planned?'full':actual>0?'partial':'missed';}
+    return{d,dow,planned,actual,status,pct};
+  }),[days,schedules,dailyRecs,today]);
+  const getColor=(s)=>{
+    if(s.status==='full')   return'#10b981';
+    if(s.status==='partial')return s.pct>=0.5?'#f59e0b':'#fbbf24';
+    if(s.status==='missed') return'#fca5a5';
+    if(s.status==='bonus')  return'#a78bfa';
+    if(s.status==='future') return'#f8fafc';
+    return'#f1f5f9';
+  };
+  const dataMap=Object.fromEntries(dayData.map(d=>[d.d,d]));
+  return(
+    <Card style={{padding:'16px 18px'}}>
+      <Sec>📅 学習カレンダー（直近{WEEKS}週）</Sec>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,marginBottom:3}}>
+        {DOW_LABELS.map(l=><div key={l} style={{textAlign:'center',fontSize:9,color:'#94a3b8',fontWeight:600}}>{l}</div>)}
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+        {weeks.map((week,wi)=>(
+          <div key={wi} style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3}}>
+            {week.map(d=>{
+              const s=dataMap[d]||{status:'future',actual:0,planned:0,d};
+              const isToday=d===today, dt=new Date(d+'T00:00:00');
+              return(
+                <div key={d} title={`${d} 予定${s.planned}h 実績${s.actual}h`}
+                  style={{aspectRatio:'1',background:getColor(s),borderRadius:4,border:isToday?`2px solid ${BRAND}`:'1.5px solid rgba(0,0,0,.04)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <span style={{fontSize:7,fontWeight:isToday?900:400,color:isToday?BRAND:s.status==='missed'?'#b91c1c':s.status==='none'||s.status==='future'?'#cbd5e1':'#065f46',lineHeight:1}}>
+                    {dt.getDate()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',gap:8,marginTop:9,flexWrap:'wrap',alignItems:'center'}}>
+        {[['#10b981','達成'],['#f59e0b','一部'],['#fca5a5','ゼロ'],['#a78bfa','予定外'],['#f1f5f9','予定なし']].map(([c,l])=>(
+          <div key={l} style={{display:'flex',alignItems:'center',gap:3}}>
+            <div style={{width:9,height:9,background:c,borderRadius:2}}/><span style={{fontSize:9,color:'#94a3b8'}}>{l}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/* ─── ダッシュボード ──────────────────────────────── */
+function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
+  const today=todayStr();
+  const todayDOW=getToday().getDay();
+  const isMobile=useIsMobile();
+  const remaining=daysUntil(cfg.examDate);
+  const ws=weekStart();
+  const[showMore,setShowMore]=useState(false);
+
+  const weekDays=useMemo(()=>Array.from({length:7},(_,i)=>fmt(addDays(new Date(ws+'T00:00:00'),i))),[ws]);
+
+  // startDate対応: max(startDate, 14日前)
+  const startDate=useMemo(()=>{
+    const sd=cfg.startDate||todayStr();
+    const d14=fmt(addDays(getToday(),-13));
+    return sd>d14?sd:d14;
+  },[cfg.startDate]);
+
+  const todayPlanned=useMemo(()=>
+    schedules.filter(sc=>sc.dayOfWeek===todayDOW&&sc.enabled&&sc.targetHours>0).reduce((a,sc)=>a+sc.targetHours,0)
+  ,[schedules,todayDOW]);
+  const todayRecs=useMemo(()=>dailyRecs.filter(r=>r.date===today),[dailyRecs,today]);
+  const todayActual=useMemo(()=>todayRecs.reduce((a,r)=>a+r.actualHours,0),[todayRecs]);
+  const todaySurplus=useMemo(()=>todayRecs.reduce((a,r)=>a+(r.surplusHours||0),0),[todayRecs]);
+  const todayUnmet=useMemo(()=>Math.max(0,todayPlanned-todayActual),[todayPlanned,todayActual]);
+  const recordedToday=useMemo(()=>todayRecs.length,[todayRecs]);
+  const todayTotalSubj=useMemo(()=>schedules.filter(sc=>sc.dayOfWeek===todayDOW&&sc.enabled&&sc.targetHours>0).length,[schedules,todayDOW]);
+  const unrecordedToday=todayTotalSubj-recordedToday;
+
+  const weekPlanned=useMemo(()=>weekDays.reduce((a,d)=>{
+    const dow=new Date(d+'T00:00:00').getDay();
+    return a+schedules.filter(sc=>sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0).reduce((b,sc)=>b+sc.targetHours,0);
+  },0),[weekDays,schedules]);
+  const weekRecs=useMemo(()=>dailyRecs.filter(r=>r.date>=ws&&r.date<=today),[dailyRecs,ws,today]);
+  const weekActual=useMemo(()=>weekRecs.reduce((a,r)=>a+r.actualHours,0),[weekRecs]);
+  const weekAch=weekPlanned>0?Math.min(150,Math.round(weekActual/weekPlanned*100)):0;
+
+  const totalActual=useMemo(()=>dailyRecs.reduce((a,r)=>a+r.actualHours,0),[dailyRecs]);
+
+  // startDate以降の累計データ
+  const cumData=useMemo(()=>{
+    const dates=[];
+    let d=new Date(startDate+'T00:00:00');
+    const end=getToday();
+    while(d<=end){dates.push(fmt(d));d=new Date(d.getTime()+86400000);}
+    let ct=0,ca=0;
+    return dates.map(date=>{
+      const dow=new Date(date+'T00:00:00').getDay();
+      ct+=schedules.filter(sc=>sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0).reduce((a,sc)=>a+sc.targetHours,0);
+      ca+=dailyRecs.filter(r=>r.date===date).reduce((a,r)=>a+r.actualHours,0);
+      return{d:date,cumTarget:r2(ct),cumActual:r2(ca)};
+    });
+  },[schedules,dailyRecs,startDate]);
+  const lastCum=cumData.length?cumData[cumData.length-1]:{cumTarget:0,cumActual:0};
+
+  const subjStats=useMemo(()=>subjects.map(s=>({
+    ...s,
+    cum:dailyRecs.filter(r=>r.subjectId===s.id).reduce((a,r)=>a+r.actualHours,0),
+    unmet:dailyRecs.filter(r=>r.subjectId===s.id&&(r.unmetHours||0)>0).reduce((a,r)=>a+(r.unmetHours||0),0),
+  })),[subjects,dailyRecs]);
+
+  // 3日連続未達 アラート
+  const missAlerts=useMemo(()=>subjects.filter(s=>{
+    let miss=0;
+    for(let i=1;i<=3;i++){
+      const d=fmt(addDays(getToday(),-i));
+      const dow=new Date(d+'T00:00:00').getDay();
+      const hasSch=schedules.some(sc=>sc.subjectId===s.id&&sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0);
+      if(!hasSch)continue;
+      const rec=dailyRecs.find(r=>r.subjectId===s.id&&r.date===d);
+      if(!rec||rec.status==='skipped'||(rec.unmetHours||0)>0)miss++;
+    }
+    return miss>=3;
+  }),[subjects,schedules,dailyRecs]);
+
+  // 今週の科目別ペース（最優先科目の判定用）
+  const subjectWeekPace=useMemo(()=>subjects.map(s=>{
+    let planned=0;
+    weekDays.filter(d=>d<=today).forEach(d=>{
+      const dow=new Date(d+'T00:00:00').getDay();
+      const sc=schedules.find(sc2=>sc2.subjectId===s.id&&sc2.dayOfWeek===dow&&sc2.enabled&&sc2.targetHours>0);
+      if(sc)planned+=sc.targetHours;
+    });
+    const actual=dailyRecs.filter(r=>r.subjectId===s.id&&weekDays.includes(r.date)&&r.date<=today).reduce((a,r)=>a+r.actualHours,0);
+    const pct=planned>0?actual/planned*100:null;
+    // 今日の予定時間
+    const todayH=schedules.find(sc=>sc.subjectId===s.id&&sc.dayOfWeek===todayDOW&&sc.enabled&&sc.targetHours>0)?.targetHours||0;
+    return{...s,planned,actual,pct,todayH};
+  }).filter(s=>s.todayH>0),[subjects,schedules,dailyRecs,weekDays,today,todayDOW]);
+
+  // 最優先科目: 1)今週ペース最低 2)3日連続未達 3)重要度高
+  const prioritySubject=useMemo(()=>{
+    if(!subjectWeekPace.length)return null;
+    let sorted=[...subjectWeekPace];
+    sorted.sort((a,b)=>{
+      const pa=a.pct??200, pb=b.pct??200;
+      if(Math.abs(pa-pb)>5)return pa-pb;
+      const missA=missAlerts.some(s=>s.id===a.id)?0:1;
+      const missB=missAlerts.some(s=>s.id===b.id)?0:1;
+      if(missA!==missB)return missA-missB;
+      return (b.importance||0)-(a.importance||0);
+    });
+    return sorted[0];
+  },[subjectWeekPace,missAlerts]);
+
+  // リカバリー提案（今週未達が0.5h以上の科目）
+  const recoveryItems=useMemo(()=>{
+    return subjects.map(s=>{
+      let weekPlannedS=0;
+      weekDays.filter(d=>d<=today).forEach(d=>{
+        const dow=new Date(d+'T00:00:00').getDay();
+        const sc=schedules.find(sc2=>sc2.subjectId===s.id&&sc2.dayOfWeek===dow&&sc2.enabled&&sc2.targetHours>0);
+        if(sc)weekPlannedS+=sc.targetHours;
+      });
+      const weekActualS=dailyRecs.filter(r=>r.subjectId===s.id&&weekDays.includes(r.date)&&r.date<=today).reduce((a,r)=>a+r.actualHours,0);
+      const behind=r2(weekPlannedS-weekActualS);
+      return{...s,behind};
+    }).filter(s=>s.behind>=0.5).sort((a,b)=>b.behind-a.behind).slice(0,3);
+  },[subjects,schedules,dailyRecs,weekDays,today]);
+
+  const getRecoveryMsg=(behind)=>{
+    if(behind<=1.5)return`今週あと ${behind.toFixed(1)}h 追加すれば予定ペースに戻れます。`;
+    if(behind<=3.0)return`明日＋週末に分けて ${behind.toFixed(1)}h 追加するとペースが戻ります。`;
+    return`まず今週 1.0h だけ戻しましょう。全部を一気に戻すより、少しずつが大事です。`;
+  };
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+
+      {/* アラート */}
+      {missAlerts.length>0&&(
+        <div style={{background:'#fff1f2',border:'1.5px solid #fca5a5',borderRadius:13,padding:'13px 16px',display:'flex',gap:10,alignItems:'center',cursor:'pointer'}} onClick={()=>setTab('today')}>
+          <span style={{fontSize:18,flexShrink:0}}>🔔</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:13,color:'#b91c1c'}}>3日連続で未達の科目があります</div>
+            <div style={{fontSize:11,color:'#dc2626',marginTop:2}}>{missAlerts.map(s=>s.name).join('・')} — まずは今日0.5hから再開しましょう</div>
+          </div>
+          <span style={{fontSize:11,color:'#dc2626',fontWeight:700,flexShrink:0}}>今日 →</span>
+        </div>
+      )}
+
+      {/* ヒーローカード */}
+      {(()=>{
+        const hoursGoal=cfg.totalHoursGoal||500;
+        const hoursPct=Math.min(100,hoursGoal>0?totalActual/hoursGoal*100:0);
+        const hoursLeft=Math.max(0,r2(hoursGoal-totalActual));
+        const paceNeeded=remaining>0?r2(hoursLeft/remaining):0;
+        return(
+          <Card style={{background:'linear-gradient(150deg,#1e1b4b 0%,#312e81 45%,#4f46e5 100%)',border:'none',padding:0,overflow:'hidden',position:'relative'}}>
+            <div style={{position:'absolute',top:-40,right:-40,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.04)',zIndex:0}}/>
+            <div style={{padding:'22px 22px 20px',position:'relative',zIndex:1}}>
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:10,color:'rgba(255,255,255,.5)',letterSpacing:1.2,marginBottom:5}}>🎯 目標</div>
+                <div style={{fontSize:isMobile?20:24,fontWeight:900,color:'#fff',lineHeight:1.2,textShadow:'0 2px 12px rgba(0,0,0,.3)'}}>{cfg.targetGraduateSchool}</div>
+                <div style={{fontSize:14,fontWeight:700,color:'rgba(255,255,255,.75)',marginTop:3}}>{cfg.department}</div>
+              </div>
+              <div style={{display:'flex',gap:10,alignItems:'stretch',flexWrap:'wrap'}}>
+                <div style={{flex:'0 0 auto',background:'rgba(255,255,255,.12)',borderRadius:12,padding:'13px 18px'}}>
+                  <div style={{fontSize:9,color:'rgba(255,255,255,.55)',marginBottom:2}}>試験日まで</div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:3}}>
+                    <span style={{fontSize:isMobile?44:52,fontWeight:900,color:'#fff',lineHeight:1,letterSpacing:-2}}>{remaining}</span>
+                    <span style={{fontSize:16,fontWeight:700,color:'rgba(255,255,255,.8)'}}>日</span>
+                  </div>
+                  <div style={{fontSize:9,color:'rgba(255,255,255,.4)',marginTop:2}}>{cfg.examDate}</div>
+                </div>
+                <div style={{flex:1,minWidth:140,background:'rgba(255,255,255,.12)',borderRadius:12,padding:'13px 16px',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+                    <span style={{fontSize:9,color:'rgba(255,255,255,.55)'}}>累計学習時間</span>
+                    <span style={{fontSize:9,color:'rgba(255,255,255,.45)'}}>目標 {hoursGoal}h</span>
+                  </div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:4,marginBottom:8}}>
+                    <span style={{fontSize:28,fontWeight:900,color:'#fff',lineHeight:1}}>{totalActual.toFixed(1)}</span>
+                    <span style={{fontSize:12,color:'rgba(255,255,255,.7)',fontWeight:700}}>h</span>
+                    <span style={{fontSize:11,color:'rgba(255,255,255,.5)',marginLeft:2}}>/ {hoursGoal}h</span>
+                  </div>
+                  <div>
+                    <div style={{height:7,background:'rgba(255,255,255,.18)',borderRadius:4,overflow:'hidden',marginBottom:4}}>
+                      <div style={{height:'100%',width:`${hoursPct}%`,background:'linear-gradient(90deg,#a5f3fc,#67e8f9)',borderRadius:4,transition:'width .8s'}}/>
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:8,color:'rgba(255,255,255,.45)'}}>
+                      <span style={{fontWeight:700,color:'rgba(255,255,255,.7)'}}>{Math.round(hoursPct)}% 達成</span>
+                      {hoursLeft>0&&<span>あと {hoursLeft.toFixed(0)}h（{remaining>0?`日平均 ${paceNeeded}h`:'試験日！'}）</span>}
+                      {hoursLeft<=0&&<span style={{color:'#a5f3fc',fontWeight:700}}>目標達成🎉</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        );
+      })()}
+
+      {/* 今日の達成 */}
+      <Card style={{padding:'16px 18px'}}>
+        <Sec>今日の達成状況（{DOW_LABELS[todayDOW]}曜日）</Sec>
+        <TodayGauge planned={todayPlanned} actual={todayActual} surplus={todaySurplus} unmet={todayUnmet}/>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}}>
+          {recordedToday>0&&<span style={{fontSize:11,background:'#f0fdf4',color:'#059669',border:'1px solid #a7f3d0',borderRadius:20,padding:'3px 10px',fontWeight:600}}>記録済み {recordedToday}科目</span>}
+          {unrecordedToday>0&&<span style={{fontSize:11,background:'#eff6ff',color:'#3b82f6',border:'1px solid #bfdbfe',borderRadius:20,padding:'3px 10px',fontWeight:600}}>未記録 {unrecordedToday}科目</span>}
+          {todayUnmet>0&&<span style={{fontSize:11,background:'#fffbeb',color:'#d97706',border:'1px solid #fde68a',borderRadius:20,padding:'3px 10px',fontWeight:600}}>未達 {todayUnmet.toFixed(1)}h</span>}
+        </div>
+        {/* 最優先科目 */}
+        {prioritySubject&&(
+          <div style={{marginTop:10,background:'#fef9ec',borderRadius:10,padding:'10px 12px',border:'1px solid #fde68a'}}>
+            <div style={{fontSize:12,fontWeight:800,color:'#92400e',marginBottom:2}}>💡 今日最低限やるなら</div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:prioritySubject.color,flexShrink:0}}/>
+              <span style={{fontSize:13,fontWeight:700,color:'#334155'}}>{prioritySubject.name} {prioritySubject.todayH}h</span>
+            </div>
+            <div style={{fontSize:10,color:'#78350f',marginTop:3}}>
+              {missAlerts.some(s=>s.id===prioritySubject.id)?'3日連続で未達が続いています。':
+               prioritySubject.pct!==null?`今週の達成率が${Math.round(prioritySubject.pct)}%と最も低い科目です。`:
+               '今週の予定がある科目です。'}
+            </div>
+          </div>
+        )}
+        <button onClick={()=>setTab('today')} style={{marginTop:10,width:'100%',padding:'10px',borderRadius:10,border:`1.5px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontWeight:700,fontSize:13,cursor:'pointer'}}>今日の記録をつける →</button>
+      </Card>
+
+      {/* 今週の予定vs実績 */}
+      <Card style={{padding:'16px 18px'}}>
+        <Sec>今週の予定 vs 実績</Sec>
+        <WeekBarChart weekDays={weekDays} schedules={schedules} dailyRecs={dailyRecs} today={today}/>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:12}}>
+          {[['予定',`${weekPlanned.toFixed(1)}h`,'#334155'],['実績',`${weekActual.toFixed(1)}h`,BRAND],
+            ['達成率',`${weekAch}%`,weekAch>=100?'#059669':weekAch>=70?'#d97706':'#ef4444']
+          ].map(([l,v,c])=>(
+            <div key={l} style={{textAlign:'center',background:'#f8fafc',borderRadius:10,padding:'9px 4px',border:'1px solid #e8ecf0'}}>
+              <div style={{fontSize:18,fontWeight:900,color:c}}>{v}</div>
+              <div style={{fontSize:10,color:'#94a3b8',marginTop:1}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* リカバリー提案 */}
+      {recoveryItems.length>0&&(
+        <Card style={{padding:'16px 18px'}}>
+          <Sec>📈 今週の遅れとリカバリー提案</Sec>
+          <div style={{display:'flex',flexDirection:'column',gap:9}}>
+            {recoveryItems.map(s=>(
+              <div key={s.id} style={{background:'#f8fafc',borderRadius:10,padding:'10px 12px',border:'1px solid #e8ecf0',borderLeft:`3px solid ${s.color}`}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <div style={{width:8,height:8,borderRadius:'50%',background:s.color}}/>
+                    <span style={{fontSize:12,fontWeight:700,color:'#334155'}}>{s.name}</span>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,color:'#d97706',background:'#fffbeb',border:'1px solid #fde68a',padding:'2px 8px',borderRadius:12}}>今週 -{s.behind.toFixed(1)}h</span>
+                </div>
+                <div style={{fontSize:11,color:'#64748b',lineHeight:1.6}}>{getRecoveryMsg(s.behind)}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* 詳しく見るボタン */}
+      <button onClick={()=>setShowMore(p=>!p)} style={{width:'100%',padding:'12px',borderRadius:13,border:'1px solid #e8ecf0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+        <span>{showMore?'▲ 閉じる':'📊 詳しく見る（ペース・カレンダー・科目別）'}</span>
+        <span style={{fontSize:16,color:'#94a3b8'}}>{showMore?'':'▼'}</span>
+      </button>
+
+      {showMore&&(
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <StudyMomentumCard schedules={schedules} dailyRecs={dailyRecs} today={today}/>
+          <StudyHeatmap schedules={schedules} dailyRecs={dailyRecs} today={today}/>
+          <Card style={{padding:'16px 18px'}}>
+            <Sec>累計学習ペース（{startDate} 〜）</Sec>
+            <CumChart cumData={cumData}/>
+            {cumData.length>=2&&<div style={{marginTop:12}}><PaceSummary cumTarget={lastCum.cumTarget} cumActual={lastCum.cumActual}/></div>}
+          </Card>
+          <Card style={{padding:'16px 18px'}}>
+            <Sec>科目別 今週のペース</Sec>
+            <SubjectPaceChart subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} weekDays={weekDays} today={today}/>
+          </Card>
+          <Card>
+            <Sec>科目別 累計 / 未達</Sec>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {subjStats.map(s=>(
+                <div key={s.id} style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div style={{width:9,height:9,borderRadius:'50%',background:s.color,flexShrink:0}}/>
+                  <span style={{fontSize:13,fontWeight:600,color:'#334155',width:72,flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
+                  <div style={{flex:1,height:7,background:'#f1f5f9',borderRadius:4,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${Math.min(100,s.cum/Math.max(1,s.cum+s.unmet)*100)}%`,background:s.color,borderRadius:4,transition:'width .5s'}}/>
+                  </div>
+                  <span style={{fontSize:11,color:BRAND,fontWeight:700,minWidth:36,textAlign:'right'}}>{s.cum.toFixed(1)}h</span>
+                  {s.unmet>0&&<span style={{fontSize:11,color:'#ef4444',fontWeight:600,minWidth:44,textAlign:'right'}}>-{s.unmet.toFixed(1)}h</span>}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── ガントチャート ─────────────────────────────── */
+function GanttChart({subjects,tasks,dates,today}){
+  const DAYS=dates.length,CW=36,LW=160;
+  const DOW='日月火水木金土';
+  return(
+    <div style={{overflowX:'auto'}}>
+      <div style={{display:'flex',minWidth:LW+CW*DAYS,borderBottom:'2px solid #f1f5f9',background:'#f8fafc',position:'sticky',top:0,zIndex:3}}>
+        <div style={{width:LW,flexShrink:0,padding:'8px 12px',fontSize:11,fontWeight:700,color:'#64748b',borderRight:'1px solid #e8ecf0'}}>SUBJECT / TASK</div>
+        {dates.map(d=>{
+          const dt=new Date(d+'T00:00:00'),dow=dt.getDay(),isT=d===today;
+          return<div key={d} style={{width:CW,flexShrink:0,textAlign:'center',padding:'5px 0 4px',borderRight:'1px solid #f1f5f9',background:isT?`${BRAND}18`:dow===6?'#fffbeb':dow===0?'#fff1f2':'#f8fafc'}}>
+            <div style={{fontSize:9,fontWeight:isT?800:500,color:isT?BRAND:dow===0?'#ef4444':dow===6?'#f59e0b':'#94a3b8'}}>{dt.getMonth()+1}/{dt.getDate()}</div>
+            <div style={{fontSize:8,color:isT?BRAND:dow===0?'#ef4444':dow===6?'#f59e0b':'#c8d1dc'}}>{DOW[dow]}</div>
+          </div>;
+        })}
+      </div>
+      {subjects.map(subj=>{
+        const st=tasks.filter(t=>t.subjectId===subj.id);
+        return<div key={subj.id}>
+          <div style={{display:'flex',minWidth:LW+CW*DAYS,background:'#f8fafc',borderBottom:'1px solid #f1f5f9'}}>
+            <div style={{width:LW,flexShrink:0,padding:'6px 12px',display:'flex',alignItems:'center',gap:7,borderRight:'1px solid #e8ecf0'}}>
+              <div style={{width:9,height:9,borderRadius:'50%',background:subj.color,flexShrink:0}}/>
+              <span style={{fontSize:12,fontWeight:700,color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{subj.name}</span>
+            </div>
+            {dates.map(d=>{const dow=new Date(d+'T00:00:00').getDay(),isT=d===today;return<div key={d} style={{width:CW,flexShrink:0,background:isT?`${BRAND}10`:dow===0?'#fff6f6':dow===6?'#fffdf0':'transparent',borderRight:'1px solid #f5f7fa',position:'relative'}}>{isT&&<div style={{position:'absolute',left:'50%',transform:'translateX(-50%)',top:0,bottom:0,width:1.5,background:BRAND,opacity:.4}}/>}</div>;})}
+          </div>
+          {st.map(task=>{
+            const si=dates.indexOf(task.plannedDate),ei=dates.indexOf(task.dueDate);
+            const sc=si>=0?si:(task.plannedDate<dates[0]?0:-1);
+            const ec=ei>=0?ei:(task.dueDate>dates[dates.length-1]?dates.length-1:-1);
+            const hasBar=sc>=0&&ec>=0, m=S_META[task.status]||S_META.not_started;
+            return<div key={task.id} style={{display:'flex',minWidth:LW+CW*DAYS,height:34,borderBottom:'1px solid #f8fafc'}}>
+              <div style={{width:LW,flexShrink:0,padding:'0 8px 0 20px',display:'flex',flexDirection:'column',justifyContent:'center',borderRight:'1px solid #e8ecf0',overflow:'hidden',background:'#fff'}}>
+                <div style={{fontSize:10,color:'#334155',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{task.title}</div>
+                <div style={{fontSize:8,color:'#94a3b8'}}>{task.estimatedHours}h · {m.label}</div>
+              </div>
+              {dates.map((d,ci)=>{
+                const inR=hasBar&&ci>=sc&&ci<=ec,isS=ci===sc,isE=ci===ec;
+                const dow=new Date(d+'T00:00:00').getDay(),isT=d===today;
+                return<div key={d} style={{width:CW,flexShrink:0,height:'100%',background:isT?`${BRAND}08`:dow===0?'#fff6f6':dow===6?'#fffdf0':'#fff',borderRight:'1px solid #f5f5f5',position:'relative',display:'flex',alignItems:'center'}}>
+                  {inR&&<div style={{position:'absolute',left:isS?4:0,right:isE?4:0,height:16,background:m.bg,border:`1.5px solid ${m.border}`,borderLeft:isS?`3px solid ${m.ring}`:'none',borderRadius:isS&&isE?5:isS?'4px 0 0 4px':isE?'0 4px 4px 0':0,display:'flex',alignItems:'center',overflow:'hidden'}}>
+                    {isS&&<span style={{fontSize:7,color:m.text,paddingLeft:4,whiteSpace:'nowrap',fontWeight:700}}>{task.title.includes('：')?task.title.split('：').pop():task.title}</span>}
+                  </div>}
+                  {isT&&<div style={{position:'absolute',left:'50%',transform:'translateX(-50%)',top:0,bottom:0,width:1.5,background:BRAND,opacity:.3,zIndex:1}}/>}
+                </div>;
+              })}
+            </div>;
+          })}
+        </div>;
+      })}
+    </div>
+  );
+}
+
+/* ─── 計画タブ ──────────────────────────────────── */
+function PlanView({subjects,schedules,tasks,setTasks}){
+  const[showTasks,setShowTasks]=useState(false);
+  const[showForm,setShowForm]=useState(false);
+  const[editId,setEditId]=useState(null);
+  const today=todayStr();
+  const dates=useMemo(()=>Array.from({length:28},(_,i)=>fmt(addDays(getToday(),i))),[]);
+  const weeklyData=useMemo(()=>subjects.map(s=>{
+    const hours=Array.from({length:7},(_,dow)=>{const sc=schedules.find(s2=>s2.subjectId===s.id&&s2.dayOfWeek===dow);return sc?.enabled?sc.targetHours:0;});
+    return{...s,hours,total:hours.reduce((a,h)=>a+h,0)};
+  }),[subjects,schedules]);
+  const dayTotals=useMemo(()=>Array.from({length:7},(_,dow)=>weeklyData.reduce((a,s)=>a+s.hours[dow],0)),[weeklyData]);
+  const grandTotal=dayTotals.reduce((a,h)=>a+h,0);
+  const EMPTY=()=>({subjectId:'',title:'',category:'基礎理解',plannedDate:today,dueDate:'',estimatedHours:2,priority:3,status:'not_started'});
+  const[form,setForm]=useState(EMPTY());
+  const openAdd=()=>{setEditId(null);setForm(EMPTY());setShowForm(true);};
+  const openEdit=(t)=>{setEditId(t.id);setForm({subjectId:t.subjectId,title:t.title,category:t.category,plannedDate:t.plannedDate,dueDate:t.dueDate,estimatedHours:t.estimatedHours,priority:t.priority,status:t.status});setShowForm(true);};
+  const saveTask=()=>{
+    if(!form.title.trim()||!form.subjectId||!form.plannedDate||!form.dueDate)return;
+    const base={subjectId:form.subjectId,title:form.title,category:form.category,plannedDate:form.plannedDate,dueDate:form.dueDate,estimatedHours:parseFloat(form.estimatedHours)||1,actualHours:0,priority:parseInt(form.priority)||3,status:form.status,progress:0,understandingLevel:0,memo:''};
+    if(editId)setTasks(p=>p.map(t=>t.id===editId?{...t,...base}:t));
+    else setTasks(p=>[...p,{id:`t-${Date.now()}`,...base}]);
+    setShowForm(false);setEditId(null);
+  };
+  const delTask=id=>{if(confirm('削除しますか？'))setTasks(p=>p.filter(t=>t.id!==id));};
+  const inp=(key,type,extra)=><input type={type} value={form[key]} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))} {...extra} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,...(extra?.style||{})}}/>;
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <Card style={{padding:'14px 16px'}}>
+        <Sec>週間学習スケジュール</Sec>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr>
+              <th style={{textAlign:'left',padding:'5px 8px',fontWeight:700,color:'#64748b',fontSize:11,borderBottom:'2px solid #f1f5f9',minWidth:72}}>科目</th>
+              {DOW_LABELS.map((d,i)=><th key={i} style={{textAlign:'center',padding:'5px 6px',fontWeight:700,color:i===0?'#ef4444':i===6?'#f59e0b':'#64748b',fontSize:11,borderBottom:'2px solid #f1f5f9',width:46}}>{d}</th>)}
+              <th style={{textAlign:'center',padding:'5px 6px',fontWeight:700,color:BRAND,fontSize:11,borderBottom:'2px solid #f1f5f9',width:50}}>週計</th>
+            </tr></thead>
+            <tbody>
+              {weeklyData.map(s=>(
+                <tr key={s.id} style={{borderBottom:'1px solid #f8fafc'}}>
+                  <td style={{padding:'7px 8px'}}><div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:8,height:8,borderRadius:'50%',background:s.color,flexShrink:0}}/><span style={{fontWeight:600,color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span></div></td>
+                  {s.hours.map((h,i)=><td key={i} style={{textAlign:'center',padding:'7px 4px',color:h>0?'#334155':'#e2e8f0',fontWeight:h>0?600:400,fontSize:11}}>{h>0?`${h}h`:'—'}</td>)}
+                  <td style={{textAlign:'center',padding:'7px 4px',fontWeight:700,color:BRAND,fontSize:11}}>{s.total>0?`${s.total}h`:'—'}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr style={{background:'#f8fafc'}}>
+              <td style={{padding:'7px 8px',fontWeight:700,color:'#64748b',fontSize:11}}>合計</td>
+              {dayTotals.map((h,i)=><td key={i} style={{textAlign:'center',padding:'7px 4px',fontWeight:700,color:h>0?'#334155':'#e2e8f0',fontSize:11}}>{h>0?`${h}h`:'—'}</td>)}
+              <td style={{textAlign:'center',padding:'7px 4px',fontWeight:900,color:BRAND,fontSize:12}}>{grandTotal}h</td>
+            </tr></tfoot>
+          </table>
+        </div>
+        <div style={{fontSize:10,color:'#94a3b8',marginTop:10}}>※ スケジュール変更は設定タブから</div>
+      </Card>
+      <button onClick={()=>setShowTasks(p=>!p)} style={{width:'100%',padding:'12px 16px',borderRadius:13,border:'1px solid #e8ecf0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+        <span>📋 詳細タスク管理（任意）</span><span style={{fontSize:16,color:'#94a3b8'}}>{showTasks?'▲':'▼'}</span>
+      </button>
+      {showTasks&&(
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          <Card style={{padding:'14px 16px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <Sec style={{marginBottom:0}}>タスク一覧</Sec>
+              <button onClick={openAdd} style={{padding:'6px 13px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer'}}>＋ 追加</button>
+            </div>
+            {tasks.length===0&&<div style={{textAlign:'center',color:'#94a3b8',fontSize:12,padding:'16px 0'}}>タスクがありません</div>}
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {tasks.map(t=>{
+                const subj=subjects.find(s=>s.id===t.subjectId), m=S_META[t.status]||S_META.not_started;
+                return(
+                  <div key={t.id} style={{display:'flex',alignItems:'center',gap:9,padding:'9px 12px',background:'#f8fafc',borderRadius:10,border:'1px solid #e8ecf0',borderLeft:`3px solid ${subj?.color||'#94a3b8'}`}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.title}</div>
+                      <div style={{fontSize:10,color:'#94a3b8',marginTop:2,display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <span>{subj?.name||'?'}</span><span>{t.plannedDate}〜{t.dueDate}</span><span>{t.estimatedHours}h</span>
+                        <span style={{color:m.text,background:m.bg,border:`1px solid ${m.border}`,padding:'1px 7px',borderRadius:10}}>{m.label}</span>
+                      </div>
+                    </div>
+                    <button onClick={()=>openEdit(t)} style={{padding:'5px 10px',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontSize:11,cursor:'pointer',flexShrink:0}}>編集</button>
+                    <button onClick={()=>delTask(t.id)} style={{padding:'5px 10px',borderRadius:7,border:'1px solid #fecaca',background:'#fff1f2',color:'#dc2626',fontSize:11,cursor:'pointer',flexShrink:0}}>削除</button>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+          {showForm&&(
+            <Card style={{border:`1.5px solid ${BRAND}`,padding:'16px 18px'}}>
+              <div style={{fontWeight:800,fontSize:14,color:BRAND_DARK,marginBottom:14}}>{editId?'タスクを編集':'タスクを追加'}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>科目*</label>
+                  <select value={form.subjectId} onChange={e=>setForm(p=>({...p,subjectId:e.target.value}))} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,background:'#fff'}}>
+                    <option value=''>選択...</option>{subjects.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>タスク名*</label>{inp('title','text',{placeholder:'例：線形代数：行列計算'})}</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>開始日*</label>{inp('plannedDate','date')}</div>
+                  <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>期限*</label>{inp('dueDate','date')}</div>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>予定時間(h)</label>
+                    <input type="number" min="0.5" max="20" step="0.5" value={form.estimatedHours} onChange={e=>setForm(p=>({...p,estimatedHours:parseFloat(e.target.value)||1}))} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13}}/>
+                  </div>
+                  <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>ステータス</label>
+                    <select value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,background:'#fff'}}>
+                      {Object.entries(S_META).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:9,marginTop:4}}>
+                  <button onClick={saveTask} disabled={!form.title.trim()||!form.subjectId||!form.plannedDate||!form.dueDate}
+                    style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:(form.title.trim()&&form.subjectId&&form.plannedDate&&form.dueDate)?BRAND:'#e2e8f0',color:(form.title.trim()&&form.subjectId&&form.plannedDate&&form.dueDate)?'#fff':'#94a3b8',fontWeight:800,fontSize:13,cursor:'pointer'}}>
+                    {editId?'更新する':'追加する'}
+                  </button>
+                  <button onClick={()=>{setShowForm(false);setEditId(null);}} style={{padding:'11px 18px',borderRadius:10,border:'1px solid #e2e8f0',background:'#f8fafc',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>キャンセル</button>
+                </div>
+              </div>
+            </Card>
+          )}
+          <Card style={{padding:'14px 18px'}}>
+            <Sec>ガントチャート（28日間）</Sec>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:10}}>
+              {Object.entries(S_META).map(([k,v])=>(
+                <div key={k} style={{display:'flex',alignItems:'center',gap:4}}>
+                  <div style={{width:10,height:7,borderRadius:2,background:v.bg,border:`1.5px solid ${v.ring}`}}/><span style={{fontSize:11,color:'#64748b'}}>{v.label}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <div style={{borderRadius:13,border:'1px solid #e8ecf0',background:'#fff',boxShadow:'0 2px 8px rgba(0,0,0,.04)',overflow:'hidden'}}>
+            <GanttChart subjects={subjects} tasks={tasks} dates={dates} today={today}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── 設定 ──────────────────────────────────────── */
+const CFG_FIELDS=[
+  {label:'志望大学院',key:'targetGraduateSchool',type:'text'},
+  {label:'専攻',key:'department',type:'text'},
+  {label:'試験日',key:'examDate',type:'date'},
+  {label:'学習開始日（記録の起算日）',key:'startDate',type:'date'},
+  {label:'平日の学習可能時間（h）',key:'weekdayStudyHours',type:'number'},
+  {label:'休日の学習可能時間（h）',key:'weekendStudyHours',type:'number'},
+  {label:'週の学習目標時間（h）',key:'weeklyTargetHours',type:'number'},
+  {label:'累計学習目標時間（h）',key:'totalHoursGoal',type:'number'},
+];
+
+function SettingsView({cfg,setCfg,subjects,setSubjects,schedules,setSchedules,dailyRecs,setDailyRecs,tasks,setTasks}){
+  const[local,setLocal]=useState(cfg);
+  const[ns,setNs]=useState({name:'',importance:3,currentLevel:2,targetLevel:5});
+  const[editSid,setEditSid]=useState(null);
+  const[editSubj,setEditSubj]=useState({});
+  useEffect(()=>setLocal(cfg),[cfg]);
+
+  // 週計・ズレ警告
+  const weeklyTotals=useMemo(()=>subjects.map(s=>{
+    const total=schedules.filter(sc=>sc.subjectId===s.id&&sc.enabled&&sc.targetHours>0).reduce((a,sc)=>a+sc.targetHours,0);
+    return{...s,weeklyTotal:r2(total)};
+  }),[subjects,schedules]);
+  const scheduleGrandTotal=r2(weeklyTotals.reduce((a,s)=>a+s.weeklyTotal,0));
+  const weeklyTargetDiff=r2(scheduleGrandTotal-(local.weeklyTargetHours||0));
+
+  const addSubj=()=>{
+    if(!ns.name.trim())return;
+    const newId=`s${Date.now()}`;
+    setSubjects(p=>[...p,{...ns,id:newId,color:SUBJ_COLORS[p.length%SUBJ_COLORS.length]}]);
+    setSchedules(p=>[...p,...makeSchedules(newId)]);
+    setNs({name:'',importance:3,currentLevel:2,targetLevel:5});
+  };
+  // 科目削除：schedules/dailyRecs/tasks も同時に物理削除
+  const removeSubj=(id)=>{
+    if(!confirm('この科目を削除しますか？\n関連する記録・タスクもすべて削除されます。'))return;
+    setSubjects(p=>p.filter(s=>s.id!==id));
+    setSchedules(p=>p.filter(s=>s.subjectId!==id));
+    setDailyRecs(p=>p.filter(r=>r.subjectId!==id));
+    setTasks(p=>p.filter(t=>t.subjectId!==id));
+  };
+  const startEdit=(s)=>{setEditSid(s.id);setEditSubj({...s});};
+  const saveEdit=()=>{setSubjects(p=>p.map(s=>s.id===editSid?{...s,...editSubj}:s));setEditSid(null);};
+  const updateSch=(sid,dow,val)=>{const h=Math.max(0,parseFloat(val)||0);setSchedules(p=>p.map(sc=>sc.subjectId===sid&&sc.dayOfWeek===dow?{...sc,targetHours:h,enabled:h>0}:sc));};
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <Card>
+        <Sec>基本設定</Sec>
+        <div style={{display:'flex',flexDirection:'column',gap:11}}>
+          {CFG_FIELDS.map(({label,key,type})=>(
+            <div key={key}>
+              <label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:5}}>{label}</label>
+              <input type={type} value={local[key]??''} onChange={e=>setLocal(p=>({...p,[key]:type==='number'?(parseFloat(e.target.value)||0):e.target.value}))} style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13}}/>
+            </div>
+          ))}
+          <button onClick={()=>setCfg(local)} style={{marginTop:2,padding:'11px',borderRadius:10,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>保存する</button>
+          {Math.abs(weeklyTargetDiff)>0.1&&(
+            <div style={{padding:'10px 12px',borderRadius:9,background:'#fffbeb',border:'1px solid #fde68a',fontSize:11,color:'#92400e'}}>
+              ⚠️ 曜日別スケジュールの合計は週{scheduleGrandTotal}hです。週目標{local.weeklyTargetHours||0}hと{weeklyTargetDiff>0?`${weeklyTargetDiff}h超過`:`${Math.abs(weeklyTargetDiff)}h不足`}しています。（目安として参考にしてください）
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <Sec>科目と曜日別スケジュール</Sec>
+        {/* 週計サマリー */}
+        <div style={{background:'#f8fafc',borderRadius:10,padding:'10px 12px',marginBottom:12,border:'1px solid #e8ecf0'}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#64748b',marginBottom:7}}>週計サマリー</div>
+          {weeklyTotals.map(s=>(
+            <div key={s.id} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:s.color,flexShrink:0}}/>
+              <span style={{fontSize:12,color:'#334155',flex:1}}>{s.name}</span>
+              <span style={{fontSize:12,fontWeight:700,color:s.weeklyTotal>0?BRAND:'#94a3b8'}}>週 {s.weeklyTotal}h</span>
+            </div>
+          ))}
+          <div style={{borderTop:'1px solid #e8ecf0',paddingTop:6,marginTop:4,display:'flex',justifyContent:'space-between'}}>
+            <span style={{fontSize:11,fontWeight:700,color:'#64748b'}}>全体合計</span>
+            <span style={{fontSize:12,fontWeight:900,color:BRAND}}>週 {scheduleGrandTotal}h</span>
+          </div>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:14}}>
+          {subjects.map(s=>{
+            const wt=weeklyTotals.find(x=>x.id===s.id);
+            return(
+            <div key={s.id}>
+              {editSid!==s.id?(
+                <div style={{borderRadius:12,border:'1px solid #e8ecf0',overflow:'hidden'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 13px',background:'#f8fafc'}}>
+                    <div style={{width:22,height:22,borderRadius:6,background:s.color,flexShrink:0,border:'2px solid rgba(0,0,0,.06)'}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:'#334155'}}>{s.name}</div>
+                      <div style={{fontSize:10,color:'#94a3b8',marginTop:1}}>重要度{'★'.repeat(s.importance)} · Lv{s.currentLevel}→{s.targetLevel} · 週{wt?.weeklyTotal||0}h</div>
+                    </div>
+                    <button onClick={()=>startEdit(s)} style={{padding:'5px 10px',borderRadius:7,border:`1px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontSize:11,cursor:'pointer',flexShrink:0}}>編集</button>
+                    <button onClick={()=>removeSubj(s.id)} style={{padding:'5px 10px',borderRadius:7,border:'1px solid #fecaca',background:'#fff1f2',color:'#dc2626',fontSize:11,cursor:'pointer',flexShrink:0}}>削除</button>
+                  </div>
+                  <div style={{padding:'10px 13px',borderTop:'1px solid #f1f5f9'}}>
+                    <div style={{fontSize:10,fontWeight:600,color:'#94a3b8',marginBottom:7}}>曜日別目標時間</div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4}}>
+                      {DOW_LABELS.map((dl,dow)=>{const sc=schedules.find(sc2=>sc2.subjectId===s.id&&sc2.dayOfWeek===dow);const h=sc?.targetHours||0;return(
+                        <div key={dow} style={{textAlign:'center'}}>
+                          <div style={{fontSize:9,fontWeight:600,color:dow===0?'#ef4444':dow===6?'#f59e0b':'#94a3b8',marginBottom:3}}>{dl}</div>
+                          <div style={{fontSize:12,fontWeight:700,color:h>0?s.color:'#e2e8f0'}}>{h>0?`${h}h`:'—'}</div>
+                        </div>
+                      );})}
+                    </div>
+                  </div>
+                </div>
+              ):(
+                <div style={{padding:'14px 15px',borderRadius:12,border:`1.5px solid ${BRAND}`,background:BRAND_LIGHT}}>
+                  <div style={{fontSize:12,fontWeight:800,color:BRAND_DARK,marginBottom:12}}>✏️ 科目を編集</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:4}}>科目名</label>
+                      <input type="text" value={editSubj.name||''} onChange={e=>setEditSubj(p=>({...p,name:e.target.value}))} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,background:'#fff'}}/>
+                    </div>
+                    <div><label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:6}}>カラー</label>
+                      <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+                        {SUBJ_COLORS.map(c=><button key={c} onClick={()=>setEditSubj(p=>({...p,color:c}))} style={{width:28,height:28,borderRadius:7,background:c,border:editSubj.color===c?'3px solid #0f172a':'2px solid transparent',cursor:'pointer',transform:editSubj.color===c?'scale(1.15)':'scale(1)',transition:'transform .1s'}}/>)}
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+                      {[{label:'重要度(1-5)',key:'importance'},{label:'現在Lv',key:'currentLevel'},{label:'目標Lv',key:'targetLevel'}].map(({label,key})=>(
+                        <div key={key}><label style={{fontSize:10,fontWeight:600,color:'#64748b',display:'block',marginBottom:3}}>{label}</label>
+                          <input type="number" min="1" max="5" value={editSubj[key]||1} onChange={e=>setEditSubj(p=>({...p,[key]:parseInt(e.target.value)||1}))} style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,background:'#fff'}}/>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <label style={{fontSize:11,fontWeight:600,color:'#64748b',display:'block',marginBottom:8}}>曜日別目標時間（0 = 学習なし）</label>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:6}}>
+                        {DOW_LABELS.map((dl,dow)=>{const sc=schedules.find(sc2=>sc2.subjectId===s.id&&sc2.dayOfWeek===dow);return(
+                          <div key={dow} style={{textAlign:'center'}}>
+                            <div style={{fontSize:10,fontWeight:700,color:dow===0?'#ef4444':dow===6?'#f59e0b':'#64748b',marginBottom:4}}>{dl}</div>
+                            <input type="number" min="0" max="8" step="0.5" value={sc?.targetHours??0} onChange={e=>updateSch(s.id,dow,e.target.value)} style={{width:'100%',padding:'7px 2px',borderRadius:7,border:'1.5px solid #e2e8f0',fontSize:12,textAlign:'center',background:'#fff'}}/>
+                          </div>
+                        );})}
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:8,marginTop:2}}>
+                      <button onClick={saveEdit} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>保存する</button>
+                      <button onClick={()=>setEditSid(null)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>キャンセル</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            );
+          })}
+        </div>
+        <div style={{borderTop:'1px solid #f1f5f9',paddingTop:13}}>
+          <div style={{fontSize:12,fontWeight:700,color:'#64748b',marginBottom:9}}>科目を追加</div>
+          <input type="text" placeholder="科目名" value={ns.name} onChange={e=>setNs(p=>({...p,name:e.target.value}))} style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:9}}/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:11}}>
+            {[{label:'重要度',key:'importance'},{label:'現在Lv',key:'currentLevel'},{label:'目標Lv',key:'targetLevel'}].map(({label,key})=>(
+              <div key={key}><label style={{fontSize:10,fontWeight:600,color:'#94a3b8',display:'block',marginBottom:3}}>{label}</label>
+                <input type="number" min="1" max="5" value={ns[key]} onChange={e=>setNs(p=>({...p,[key]:parseInt(e.target.value)||1}))} style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13}}/>
+              </div>
+            ))}
+          </div>
+          <button onClick={addSubj} disabled={!ns.name.trim()} style={{width:'100%',padding:'10px',borderRadius:10,border:'none',background:ns.name.trim()?'#10b981':'#e2e8f0',color:ns.name.trim()?'#fff':'#94a3b8',fontWeight:800,fontSize:13,cursor:ns.name.trim()?'pointer':'not-allowed'}}>＋ 科目を追加</button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ─── 初回オンボーディング ─────────────────────────────────── */
+function Onboarding({subjects,setSubjects,schedules,setSchedules,cfg,setCfg,onComplete}){
+  const[step,setStep]=useState(1);
+  const[local,setLocal]=useState({...cfg});
+  const DAYS_JP=['日','月','火','水','木','金','土'];
+
+  const saveAndNext=()=>{
+    setCfg(p=>({...p,...local}));
+    setStep(s=>s+1);
+  };
+
+  const overlayStyle={position:'fixed',inset:0,background:'rgba(15,23,42,0.65)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:16};
+  const boxStyle={background:'#fff',borderRadius:20,padding:28,maxWidth:420,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.18)'};
+
+  if(step===1) return (
+    <div style={overlayStyle}>
+      <div style={boxStyle}>
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <div style={{fontSize:32,marginBottom:8}}>🎓</div>
+          <div style={{fontSize:20,fontWeight:800,color:'#1e293b',marginBottom:6}}>院試サポートアプリへようこそ</div>
+          <div style={{fontSize:13,color:'#64748b'}}>まず基本情報を設定しましょう。あとから変更できます。</div>
+        </div>
+        {[
+          {label:'志望大学院',key:'targetGraduateSchool',type:'text',placeholder:'例: ○○大学大学院'},
+          {label:'専攻・研究科',key:'department',type:'text',placeholder:'例: 情報工学専攻'},
+          {label:'試験日',key:'examDate',type:'date'},
+          {label:'学習開始日',key:'startDate',type:'date'},
+        ].map(({label,key,type,placeholder})=>(
+          <div key={key} style={{marginBottom:12}}>
+            <label style={{fontSize:12,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>{label}</label>
+            <input type={type} placeholder={placeholder||''} value={local[key]||''} onChange={e=>setLocal(p=>({...p,[key]:e.target.value}))}
+              style={{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid #e2e8f0',fontSize:14,boxSizing:'border-box'}}/>
+          </div>
+        ))}
+        <button onClick={saveAndNext} style={{width:'100%',padding:12,borderRadius:12,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:15,cursor:'pointer',marginTop:8}}>
+          次へ →
+        </button>
+      </div>
+    </div>
+  );
+
+  if(step===2) return (
+    <div style={overlayStyle}>
+      <div style={boxStyle}>
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <div style={{fontSize:28,marginBottom:6}}>📚</div>
+          <div style={{fontSize:18,fontWeight:800,color:'#1e293b',marginBottom:4}}>学習科目を確認</div>
+          <div style={{fontSize:13,color:'#64748b'}}>サンプル科目が入っています。設定画面で追加・編集できます。</div>
+        </div>
+        <div style={{maxHeight:220,overflowY:'auto',marginBottom:16}}>
+          {subjects.map(s=>(
+            <div key={s.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',background:'#f8fafc',borderRadius:10,marginBottom:8,border:'1px solid #e2e8f0'}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:'#1e293b'}}>{s.name}</div>
+                <div style={{fontSize:11,color:'#94a3b8'}}>重要度 {'★'.repeat(s.importance||1)} / 現Lv {s.currentLevel}→目標Lv {s.targetLevel}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={()=>setStep(1)} style={{flex:1,padding:11,borderRadius:11,border:'1.5px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:14,cursor:'pointer'}}>← 戻る</button>
+          <button onClick={()=>setStep(3)} style={{flex:2,padding:11,borderRadius:11,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:14,cursor:'pointer'}}>次へ →</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if(step===3) return (
+    <div style={overlayStyle}>
+      <div style={boxStyle}>
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <div style={{fontSize:28,marginBottom:6}}>📅</div>
+          <div style={{fontSize:18,fontWeight:800,color:'#1e293b',marginBottom:4}}>週間スケジュールを確認</div>
+          <div style={{fontSize:13,color:'#64748b'}}>各曜日の学習時間目標です。設定画面で変更できます。</div>
+        </div>
+        <div style={{marginBottom:16}}>
+          {[0,1,2,3,4,5,6].map(dow=>{
+            const dayScheds=schedules.filter(sc=>sc.dayOfWeek===dow&&sc.enabled);
+            const total=dayScheds.reduce((s,sc)=>s+(sc.targetHours||0),0);
+            return(
+              <div key={dow} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:dow===0||dow===6?'#fef9f0':'#f8fafc',borderRadius:9,marginBottom:6,border:'1px solid #e2e8f0'}}>
+                <div style={{fontWeight:700,color:dow===0||dow===6?'#d97706':'#1e293b'}}>{DAYS_JP[dow]}曜日</div>
+                <div style={{fontSize:13,color:'#64748b'}}>{total>0?`${total}h`:'休み'}</div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={()=>setStep(2)} style={{flex:1,padding:11,borderRadius:11,border:'1.5px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:14,cursor:'pointer'}}>← 戻る</button>
+          <button onClick={()=>setStep(4)} style={{flex:2,padding:11,borderRadius:11,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:14,cursor:'pointer'}}>次へ →</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if(step===4) return (
+    <div style={overlayStyle}>
+      <div style={boxStyle}>
+        <div style={{textAlign:'center',padding:'12px 0 24px'}}>
+          <div style={{fontSize:48,marginBottom:12}}>🚀</div>
+          <div style={{fontSize:20,fontWeight:800,color:'#1e293b',marginBottom:8}}>準備完了！</div>
+          <div style={{fontSize:14,color:'#64748b',lineHeight:1.7,marginBottom:24}}>
+            毎日の学習記録をつけることで、<br/>ペースを可視化して合格に近づけましょう！
+          </div>
+          <button onClick={onComplete} style={{width:'100%',padding:14,borderRadius:13,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:16,cursor:'pointer',letterSpacing:0.5}}>
+            学習を始める 🎯
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return null;
+}
+
+/* ─── メインアプリ ───────────────────────────────────────── */
+/* ─── 複数ユーザー対応：データ構造 ──────────────── */
+const _T0=getToday(),_WS2=weekStart();
+const _d2=(n)=>fmt(addDays(_T0,n));
+const _wd2=(i)=>fmt(addDays(new Date(_WS2+'T00:00:00'),i));
+const _TD2=todayStr();
+
+const INIT_USERS=[
+  {id:'u_admin', name:'管理者',   email:'admin@esma.jp',   role:'admin',       active:true},
+  {id:'u_inst1', name:'山田先生', email:'yamada@esma.jp',  role:'instructor',  active:true},
+  {id:'u_st1',   name:'田中さん', email:'tanaka@esma.jp',  role:'student', studentId:'st1', active:true},
+  {id:'u_st2',   name:'佐藤さん', email:'sato@esma.jp',    role:'student', studentId:'st2', active:true},
+  {id:'u_st3',   name:'鈴木さん', email:'suzuki@esma.jp',  role:'student', studentId:'st3', active:true},
+];
+const INIT_INSTRUCTOR_STUDENTS=[
+  {id:'is1',instructorUserId:'u_inst1',studentId:'st1'},
+  {id:'is2',instructorUserId:'u_inst1',studentId:'st2'},
+  {id:'is3',instructorUserId:'u_inst1',studentId:'st3'},
+];
+const INIT_STUDENT_PROFILES=[
+  {id:'st1',userId:'u_st1',name:'田中さん',grade:'大学4年',
+   targetGraduateSchool:'東京大学大学院',department:'情報理工学系研究科',
+   examDate:'2026-08-22',startDate:_d2(-30),weekdayStudyHours:3,weekendStudyHours:5,
+   weeklyTargetHours:15,totalHoursGoal:400,active:true,onboarded:true},
+  {id:'st2',userId:'u_st2',name:'佐藤さん',grade:'大学4年',
+   targetGraduateSchool:'東京工業大学大学院',department:'情報通信系',
+   examDate:'2026-09-05',startDate:_d2(-45),weekdayStudyHours:2,weekendStudyHours:4,
+   weeklyTargetHours:12,totalHoursGoal:350,active:true,onboarded:true},
+  {id:'st3',userId:'u_st3',name:'鈴木さん',grade:'修士1年',
+   targetGraduateSchool:'京都大学大学院',department:'電気電子工学専攻',
+   examDate:'2026-08-10',startDate:_d2(-20),weekdayStudyHours:2,weekendStudyHours:3,
+   weeklyTargetHours:10,totalHoursGoal:300,active:true,onboarded:true},
+];
+
+const INIT_SUBJECTS_V2=[
+  {id:'s1_st1',studentId:'st1',name:'数学',    importance:5,currentLevel:3,targetLevel:5,color:'#6366f1'},
+  {id:'s2_st1',studentId:'st1',name:'英語',    importance:4,currentLevel:3,targetLevel:4,color:'#10b981'},
+  {id:'s3_st1',studentId:'st1',name:'専門科目',importance:5,currentLevel:2,targetLevel:5,color:'#f59e0b'},
+  {id:'s4_st1',studentId:'st1',name:'研究計画',importance:4,currentLevel:2,targetLevel:4,color:'#3b82f6'},
+  {id:'s1_st2',studentId:'st2',name:'数学',    importance:5,currentLevel:2,targetLevel:5,color:'#6366f1'},
+  {id:'s2_st2',studentId:'st2',name:'専門科目',importance:5,currentLevel:2,targetLevel:5,color:'#f59e0b'},
+  {id:'s3_st2',studentId:'st2',name:'英語',    importance:4,currentLevel:3,targetLevel:4,color:'#10b981'},
+  {id:'s1_st3',studentId:'st3',name:'専門科目',importance:5,currentLevel:3,targetLevel:5,color:'#f59e0b'},
+  {id:'s2_st3',studentId:'st3',name:'数学',    importance:4,currentLevel:3,targetLevel:5,color:'#6366f1'},
+  {id:'s3_st3',studentId:'st3',name:'英語',    importance:3,currentLevel:2,targetLevel:4,color:'#10b981'},
+];
+
+const _mk=(sid,subId,hrs)=>Array.from({length:7},(_,d)=>({
+  id:`sch-${subId}-${d}`,studentId:sid,subjectId:subId,
+  dayOfWeek:d,targetHours:hrs[d]||0,enabled:(hrs[d]||0)>0
+}));
+const INIT_SCHEDULES_V2=[
+  ..._mk('st1','s1_st1',[2,1,1,1,1,1,2]),..._mk('st1','s2_st1',[0.5,0.5,0.5,0.5,0.5,0.5,0.5]),
+  ..._mk('st1','s3_st1',[1.5,0.5,0.5,0.5,0.5,0.5,1.5]),..._mk('st1','s4_st1',[0.5,0.5,0.5,0.5,0.5,0.5,0.5]),
+  ..._mk('st2','s1_st2',[1.5,0.5,0.5,0.5,0.5,0.5,1.5]),..._mk('st2','s2_st2',[1.5,0.5,0.5,0.5,0.5,0.5,1.5]),
+  ..._mk('st2','s3_st2',[0.5,0.5,0.5,0.5,0.5,0.5,0.5]),
+  ..._mk('st3','s1_st3',[1.5,0.5,0.5,0.5,0.5,0.5,1.5]),..._mk('st3','s2_st3',[0,0.5,0,0.5,0,0.5,0]),
+  ..._mk('st3','s3_st3',[0,0.5,0,0.5,0,0.5,0]),
+];
+
+const _mkRec=(id,studentId,subjectId,di,ph,ah)=>{
+  const date=_wd2(di); if(date>_TD2)return null;
+  return{id,studentId,subjectId,date,plannedHours:ph,actualHours:ah,...calcRecord(ph,ah),createdAt:date,editedAt:date};
+};
+const INIT_DAILY_V2=[
+  ['dr1','st1','s1_st1',0,2,2],  ['dr2','st1','s2_st1',0,0.5,0.5],['dr3','st1','s3_st1',0,0.5,0.5],
+  ['dr4','st1','s1_st1',1,1,1],  ['dr5','st1','s2_st1',1,0.5,0.5],['dr6','st1','s3_st1',1,0.5,0.5],
+  ['dr7','st1','s1_st1',2,1,1],  ['dr8','st1','s2_st1',2,0.5,0.5],['dr9','st1','s3_st1',2,0.5,0.5],
+  ['dr10','st1','s1_st1',3,1,1], ['dr11','st1','s2_st1',3,0.5,0.5],['dr12','st1','s3_st1',3,0.5,0.5],
+  ['dr13','st1','s1_st1',4,1,1.5],['dr14','st1','s2_st1',4,0.5,0.5],['dr15','st1','s3_st1',4,0.5,1],
+  ['dr16','st2','s1_st2',0,1.5,1], ['dr17','st2','s2_st2',0,1.5,0.5],
+  ['dr18','st2','s1_st2',1,0.5,0.5],['dr19','st2','s3_st2',1,0.5,0],
+  ['dr20','st2','s2_st2',2,0.5,0.5],['dr21','st2','s3_st2',2,0.5,0.5],
+  ['dr22','st2','s1_st2',3,0.5,0],  ['dr23','st2','s2_st2',3,0.5,0],
+  ['dr24','st2','s2_st2',4,0.5,0.5],['dr25','st2','s3_st2',4,0.5,0.5],
+  ['dr26','st3','s1_st3',1,0.5,0.5],
+].map(a=>_mkRec(...a)).filter(Boolean);
+
+const INIT_TASKS_V2=[
+  {id:'t1',studentId:'st1',subjectId:'s1_st1',title:'線形代数：行列計算',   category:'基礎理解',plannedDate:_d2(0),dueDate:_d2(7), estimatedHours:2,  actualHours:0,priority:5,status:'not_started',progress:0,understandingLevel:0,memo:''},
+  {id:'t2',studentId:'st1',subjectId:'s3_st1',title:'専門科目：基礎理論',   category:'基礎理解',plannedDate:_d2(0),dueDate:_d2(8), estimatedHours:4,  actualHours:0,priority:5,status:'not_started',progress:0,understandingLevel:0,memo:''},
+  {id:'t3',studentId:'st2',subjectId:'s2_st2',title:'専門科目：演習問題',   category:'問題演習',plannedDate:_d2(0),dueDate:_d2(10),estimatedHours:3,  actualHours:0,priority:4,status:'not_started',progress:0,understandingLevel:0,memo:''},
+];
+const INIT_INSTRUCTOR_NOTES=[
+  {id:'in1',studentId:'st1',instructorUserId:'u_inst1',date:_d2(-7),
+   privateMemo:'数学の理解が深まっている。線形代数は順調。英語の演習量をもう少し増やしたい。',
+   studentVisibleAction:'行列計算の問題集を1章終わらせる',
+   nextMeetingDate:_d2(3),checked:false,createdAt:_d2(-7)},
+  {id:'in2',studentId:'st2',instructorUserId:'u_inst1',date:_d2(-14),
+   privateMemo:'専門科目の演習が少ない。モチベーションが落ちている可能性あり。次回面談で確認する。',
+   studentVisibleAction:'専門科目の問題演習を週3h以上行う',
+   nextMeetingDate:_d2(7),checked:true,createdAt:_d2(-14)},
+  {id:'in3',studentId:'st3',instructorUserId:'u_inst1',date:_d2(-3),
+   privateMemo:'連絡が取りにくい状況。記録が止まっている。要フォロー。',
+   studentVisibleAction:'今週中に学習再開し、まず1日30分から始める',
+   nextMeetingDate:_d2(2),checked:false,createdAt:_d2(-3)},
+];
+const DEFAULT_SESSION={userId:'u_st1',role:'student'};
+
+/* ─── 講師：メトリクス計算（studentId分離版） ───── */
+function calcStudentMetrics(profile,subjects,schedules,dailyRecs){
+  const ws=weekStart(),td=todayStr(),wsDt=new Date(ws+'T00:00:00');
+  let weekPlanned=0;
+  for(let i=0;i<7;i++){
+    const d=fmt(addDays(wsDt,i)); if(d>td)break;
+    const dow=new Date(d+'T00:00:00').getDay();
+    schedules.filter(sc=>sc.enabled&&sc.dayOfWeek===dow).forEach(sc=>weekPlanned+=sc.targetHours||0);
+  }
+  const weekRecs=dailyRecs.filter(r=>r.date>=ws&&r.date<=td);
+  const weekActual=r2(weekRecs.reduce((s,r)=>s+(r.actualHours||0),0));
+  const weekAchievementRate=weekPlanned>0?Math.round(weekActual/weekPlanned*100):0;
+  const todayRecs=dailyRecs.filter(r=>r.date===td);
+  const todayActual=r2(todayRecs.reduce((s,r)=>s+(r.actualHours||0),0));
+  const todayRecorded=todayRecs.some(r=>r.actualHours>0);
+  const recent3=[];
+  for(let i=1;i<=3;i++){
+    const d=fmt(addDays(getToday(),-i)),dow=new Date(d+'T00:00:00').getDay();
+    if(schedules.some(sc=>sc.enabled&&sc.dayOfWeek===dow&&(sc.targetHours||0)>0))
+      recent3.push(dailyRecs.some(r=>r.date===d&&r.actualHours>0));
+  }
+  const recentMissing=recent3.length>=2&&recent3.every(v=>!v);
+  const subjectWeekMetrics=subjects.map(s=>{
+    const sch=schedules.filter(sc=>sc.subjectId===s.id&&sc.enabled);
+    let planned=0;
+    for(let i=0;i<7;i++){
+      const d=fmt(addDays(wsDt,i)); if(d>td)break;
+      const dow=new Date(d+'T00:00:00').getDay();
+      sch.filter(sc=>sc.dayOfWeek===dow).forEach(sc=>planned+=sc.targetHours||0);
+    }
+    const actual=r2(weekRecs.filter(r=>r.subjectId===s.id).reduce((sum,r)=>sum+(r.actualHours||0),0));
+    return{...s,planned:r2(planned),actual,pct:planned>0?Math.round(actual/planned*100):null};
+  });
+  let simpleStatus='順調';
+  if(weekAchievementRate<50||recentMissing)simpleStatus='要確認';
+  else if(weekAchievementRate<80)simpleStatus='やや遅れ';
+  return{daysLeft:daysUntil(profile.examDate),weekPlanned:r2(weekPlanned),weekActual,weekAchievementRate,todayActual,todayRecorded,subjectWeekMetrics,simpleStatus};
+}
+
+/* ─── ロール切替ヘッダー ─────────────────────────── */
+const ROLE_LABEL={student:'生徒',instructor:'講師',admin:'管理者'};
+const ROLE_ICON ={student:'🎓',instructor:'👨‍🏫',admin:'⚙️'};
+
+function RoleSwitcher({session,setSession,users}){
+  const[open,setOpen]=useState(false);
+  const me=users.find(u=>u.id===session.userId)||users[0];
+  return(
+    <div style={{position:'relative',zIndex:200,flexShrink:0}}>
+      <button onClick={()=>setOpen(p=>!p)}
+        style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,border:`1.5px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}>
+        <span>{ROLE_ICON[me?.role||'student']}</span>
+        <span>{me?.name}</span>
+        <span style={{fontSize:10,opacity:.7}}>({ROLE_LABEL[me?.role||'student']})</span>
+        <span style={{fontSize:10}}>{open?'▲':'▼'}</span>
+      </button>
+      {open&&(
+        <div style={{position:'absolute',right:0,top:'110%',background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,boxShadow:'0 8px 28px rgba(0,0,0,.14)',minWidth:190,overflow:'hidden'}}>
+          {['student','instructor','admin'].map(role=>{
+            const ru=users.filter(u=>u.role===role&&u.active);
+            if(!ru.length)return null;
+            return(
+              <div key={role}>
+                <div style={{fontSize:10,fontWeight:700,color:'#94a3b8',padding:'7px 14px 3px',background:'#f8fafc',letterSpacing:.6}}>{ROLE_ICON[role]} {ROLE_LABEL[role]}</div>
+                {ru.map(u=>(
+                  <button key={u.id} onClick={()=>{setSession({userId:u.id,role:u.role});setOpen(false);}}
+                    style={{width:'100%',padding:'9px 16px',border:'none',background:u.id===session.userId?BRAND_LIGHT:'#fff',
+                      color:u.id===session.userId?BRAND:'#334155',textAlign:'left',cursor:'pointer',fontSize:13,fontWeight:u.id===session.userId?700:500}}>
+                    {u.name} {u.id===session.userId&&'✓'}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── 講師：生徒一覧 ─────────────────────────────── */
+const STATUS_STYLE={
+  '順調':   {color:'#059669',bg:'#f0fdf4',border:'#a7f3d0'},
+  'やや遅れ':{color:'#d97706',bg:'#fffbeb',border:'#fde68a'},
+  '要確認': {color:'#dc2626',bg:'#fff1f2',border:'#fecaca'},
+};
+function StudentList({profiles,allSubjects,allSchedules,allDailyRecs,instructorNotes,onSelect}){
+  const cards=useMemo(()=>profiles.map(p=>{
+    const subjects=allSubjects.filter(s=>s.studentId===p.id);
+    const schedules=allSchedules.filter(s=>s.studentId===p.id);
+    const dailyRecs=allDailyRecs.filter(r=>r.studentId===p.id);
+    const m=calcStudentMetrics(p,subjects,schedules,dailyRecs);
+    const latestNote=[...instructorNotes.filter(n=>n.studentId===p.id)].sort((a,b)=>b.date.localeCompare(a.date))[0];
+    return{p,m,latestNote};
+  }),[profiles,allSubjects,allSchedules,allDailyRecs,instructorNotes]);
+
+  return(
+    <div>
+      <div style={{background:'linear-gradient(135deg,#4f46e5,#6366f1)',padding:'20px 18px 16px',color:'#fff'}}>
+        <div style={{fontSize:11,fontWeight:700,opacity:.8,letterSpacing:.8,marginBottom:3}}>INSTRUCTOR</div>
+        <div style={{fontSize:20,fontWeight:800}}>担当生徒一覧</div>
+        <div style={{fontSize:12,opacity:.75,marginTop:2}}>{profiles.length}名</div>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:12,padding:'14px 14px 8px'}}>
+        {cards.map(({p,m,latestNote})=>{
+          const ss=STATUS_STYLE[m.simpleStatus]||STATUS_STYLE['要確認'];
+          return(
+            <Card key={p.id} onClick={()=>onSelect(p.id)} style={{cursor:'pointer',padding:'14px 16px',borderLeft:`4px solid ${ss.border}`}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                <div>
+                  <div style={{fontSize:17,fontWeight:800,color:'#1e293b'}}>{p.name}</div>
+                  <div style={{fontSize:11,color:'#64748b',marginTop:1}}>{p.targetGraduateSchool} / {p.department}</div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                  <span style={{fontSize:10,fontWeight:700,color:ss.color,background:ss.bg,border:`1px solid ${ss.border}`,padding:'2px 8px',borderRadius:10}}>{m.simpleStatus}</span>
+                  <span style={{fontSize:10,color:'#94a3b8'}}>試験まで{m.daysLeft}日</span>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:8}}>
+                {[['今週予定',`${m.weekPlanned}h`,'#64748b'],['今週実績',`${m.weekActual}h`,'#334155'],['達成率',`${m.weekAchievementRate}%`,ss.color]].map(([l,v,c])=>(
+                  <div key={l} style={{background:'#f8fafc',borderRadius:8,padding:'5px 6px',textAlign:'center'}}>
+                    <div style={{fontSize:9,color:'#94a3b8',marginBottom:1}}>{l}</div>
+                    <div style={{fontSize:13,fontWeight:800,color:c}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#64748b'}}>
+                <span style={{color:m.todayRecorded?'#059669':'#94a3b8',fontWeight:600}}>{m.todayRecorded?'✓ 今日記録済み':'✗ 今日未記録'}</span>
+                <span>次回面談：{latestNote?.nextMeetingDate||p.nextMeetingDate||'未設定'}</span>
+              </div>
+              {latestNote&&<div style={{marginTop:7,paddingTop:7,borderTop:'1px solid #f1f5f9',fontSize:11,color:'#64748b',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📝 {latestNote.privateMemo}</div>}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 講師：生徒詳細 ─────────────────────────────── */
+function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,instructorUserId,onUpdateNotes,onBack}){
+  const m=useMemo(()=>calcStudentMetrics(profile,subjects,schedules,dailyRecs),[profile,subjects,schedules,dailyRecs]);
+  const ss=STATUS_STYLE[m.simpleStatus]||STATUS_STYLE['要確認'];
+  const sortedNotes=useMemo(()=>[...instructorNotes].sort((a,b)=>b.date.localeCompare(a.date)),[instructorNotes]);
+  const nextMeeting=sortedNotes[0]?.nextMeetingDate||'未設定';
+  const[showForm,setShowForm]=useState(false);
+  const[form,setForm]=useState({privateMemo:'',studentVisibleAction:'',nextMeetingDate:''});
+
+  const last7=useMemo(()=>{
+    const days=[];
+    for(let i=6;i>=0;i--){
+      const d=fmt(addDays(getToday(),-i)),dt=new Date(d+'T00:00:00');
+      const recs=dailyRecs.filter(r=>r.date===d);
+      const actual=r2(recs.reduce((s,r)=>s+(r.actualHours||0),0));
+      days.push({date:d,label:`${dt.getMonth()+1}/${dt.getDate()}`,dow:DOW_LABELS[dt.getDay()],actual,recorded:recs.some(r=>r.actualHours>0)});
+    }
+    return days;
+  },[dailyRecs]);
+  const maxAct=Math.max(...last7.map(d=>d.actual),1);
+
+  const saveNote=()=>{
+    if(!form.privateMemo.trim())return;
+    const n={id:`in-${Date.now()}`,studentId:profile.id,instructorUserId,date:todayStr(),
+      privateMemo:form.privateMemo.trim(),studentVisibleAction:form.studentVisibleAction.trim(),
+      nextMeetingDate:form.nextMeetingDate,checked:false,createdAt:todayStr()};
+    onUpdateNotes(p=>[n,...p]);
+    setForm({privateMemo:'',studentVisibleAction:'',nextMeetingDate:''});
+    setShowForm(false);
+  };
+  const toggleChecked=(id)=>onUpdateNotes(p=>p.map(n=>n.id===id?{...n,checked:!n.checked}:n));
+
+  return(
+    <div>
+      <div style={{background:'linear-gradient(135deg,#4f46e5,#6366f1)',padding:'16px 18px',color:'#fff'}}>
+        <button onClick={onBack} style={{border:'none',background:'rgba(255,255,255,.2)',color:'#fff',borderRadius:8,padding:'5px 12px',fontSize:12,fontWeight:700,cursor:'pointer',marginBottom:10}}>← 一覧に戻る</button>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div><div style={{fontSize:22,fontWeight:800}}>{profile.name}</div><div style={{fontSize:12,opacity:.8,marginTop:1}}>{profile.grade}</div></div>
+          <span style={{fontSize:11,fontWeight:700,color:ss.color,background:ss.bg,padding:'4px 10px',borderRadius:10}}>{m.simpleStatus}</span>
+        </div>
+        <div style={{fontSize:11,opacity:.75,marginTop:5}}>{profile.targetGraduateSchool} / {profile.department}</div>
+        <div style={{fontSize:11,opacity:.75}}>試験日：{profile.examDate}（残{m.daysLeft}日）　次回面談：{nextMeeting}</div>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:12,padding:'12px 14px 8px'}}>
+        {/* 今週の状況 */}
+        <Card style={{padding:'14px 16px'}}>
+          <Sec>今週の学習状況</Sec>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
+            {[['今週予定',`${m.weekPlanned}h`,'#64748b'],['今週実績',`${m.weekActual}h`,'#334155'],['達成率',`${m.weekAchievementRate}%`,ss.color]].map(([l,v,c])=>(
+              <div key={l} style={{textAlign:'center',background:'#f8fafc',borderRadius:9,padding:'8px 6px'}}>
+                <div style={{fontSize:10,color:'#94a3b8',marginBottom:2}}>{l}</div>
+                <div style={{fontSize:15,fontWeight:800,color:c}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:12,color:m.todayRecorded?'#059669':'#94a3b8',fontWeight:600}}>{m.todayRecorded?'✓ 今日の記録あり':'✗ 今日の記録なし'}</div>
+        </Card>
+
+        {/* 科目別今週実績 */}
+        <Card style={{padding:'14px 16px'}}>
+          <Sec>科目別 今週実績</Sec>
+          {m.subjectWeekMetrics.map(s=>(
+            <div key={s.id} style={{marginBottom:10}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <div style={{width:8,height:8,borderRadius:'50%',background:s.color}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:'#334155'}}>{s.name}</span>
+                </div>
+                <span style={{fontSize:11,color:'#64748b'}}>{s.actual}/{s.planned}h{s.pct!=null?` (${s.pct}%)`:''}</span>
+              </div>
+              <div style={{background:'#f1f5f9',borderRadius:4,height:8,overflow:'hidden'}}>
+                <div style={{height:'100%',borderRadius:4,background:s.color,width:`${Math.min(s.pct??0,100)}%`}}/>
+              </div>
+            </div>
+          ))}
+        </Card>
+
+        {/* 直近7日間 */}
+        <Card style={{padding:'14px 16px'}}>
+          <Sec>直近7日間の記録</Sec>
+          <div style={{display:'flex',gap:4,justifyContent:'space-between'}}>
+            {last7.map(d=>(
+              <div key={d.date} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                <div style={{fontSize:8,color:'#94a3b8'}}>{d.dow}</div>
+                <div style={{fontSize:8,color:'#94a3b8'}}>{d.label}</div>
+                <div style={{width:'100%',height:44,background:'#f1f5f9',borderRadius:4,display:'flex',alignItems:'flex-end',overflow:'hidden'}}>
+                  {d.actual>0&&<div style={{width:'100%',background:d.recorded?BRAND:'#94a3b8',height:`${Math.round(d.actual/maxAct*100)}%`,borderRadius:'4px 4px 0 0'}}/>}
+                </div>
+                <div style={{fontSize:9,fontWeight:700,color:d.recorded?'#334155':'#cbd5e1'}}>{d.actual>0?`${d.actual}h`:'—'}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* 講師メモ */}
+        <Card style={{padding:'14px 16px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <Sec style={{marginBottom:0}}>講師メモ</Sec>
+            <button onClick={()=>setShowForm(p=>!p)} style={{padding:'5px 12px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+              {showForm?'閉じる':'＋ 追加'}
+            </button>
+          </div>
+          {showForm&&(
+            <div style={{background:'#f8fafc',borderRadius:11,padding:14,marginBottom:14,border:`1.5px solid ${BRAND}`}}>
+              <div style={{display:'flex',flexDirection:'column',gap:9}}>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:3}}>講師メモ（内部用）</label>
+                  <textarea value={form.privateMemo} onChange={e=>setForm(p=>({...p,privateMemo:e.target.value}))} rows={3} placeholder="面談内容・気づき・注意点..." style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,resize:'vertical'}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:'#6366f1',display:'block',marginBottom:3}}>生徒への次回アクション（生徒側に表示可）</label>
+                  <input type="text" value={form.studentVisibleAction} onChange={e=>setForm(p=>({...p,studentVisibleAction:e.target.value}))} placeholder="例：行列計算の問題集を1章終わらせる" style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #ddd6fe',fontSize:13}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:3}}>次回面談日</label>
+                  <input type="date" value={form.nextMeetingDate} onChange={e=>setForm(p=>({...p,nextMeetingDate:e.target.value}))} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13}}/>
+                </div>
+                <button onClick={saveNote} disabled={!form.privateMemo.trim()} style={{padding:'10px',borderRadius:9,border:'none',background:form.privateMemo.trim()?BRAND:'#e2e8f0',color:form.privateMemo.trim()?'#fff':'#94a3b8',fontWeight:800,fontSize:13,cursor:form.privateMemo.trim()?'pointer':'not-allowed'}}>保存する</button>
+              </div>
+            </div>
+          )}
+          {sortedNotes.length===0&&<div style={{textAlign:'center',color:'#94a3b8',fontSize:12,padding:'12px 0'}}>まだメモがありません</div>}
+          {sortedNotes.map(n=>(
+            <div key={n.id} style={{padding:'11px 13px',background:n.checked?'#f8fafc':'#fff',border:`1px solid ${n.checked?'#e2e8f0':'#ddd6fe'}`,borderRadius:10,marginBottom:8,opacity:n.checked?.65:1}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                <span style={{fontSize:11,fontWeight:700,color:'#64748b'}}>{n.date}</span>
+                <button onClick={()=>toggleChecked(n.id)} style={{fontSize:10,padding:'2px 9px',borderRadius:8,border:'1px solid #e2e8f0',background:n.checked?'#f1f5f9':'#fff',color:n.checked?'#94a3b8':BRAND,cursor:'pointer',fontWeight:700}}>{n.checked?'確認済み':'確認する'}</button>
+              </div>
+              <div style={{fontSize:13,color:'#334155',lineHeight:1.5,marginBottom:n.studentVisibleAction?5:0}}>{n.privateMemo}</div>
+              {n.studentVisibleAction&&<div style={{fontSize:11,color:'#6366f1',background:'#eef2ff',borderRadius:6,padding:'4px 8px',marginBottom:n.nextMeetingDate?4:0}}>→ 生徒アクション：{n.studentVisibleAction}</div>}
+              {n.nextMeetingDate&&<div style={{fontSize:11,color:'#64748b'}}>次回面談：{n.nextMeetingDate}</div>}
+            </div>
+          ))}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ─── 講師ビュー（ルーター） ─────────────────────── */
+function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorStudents,instructorNotes,setInstructorNotes}){
+  const[selectedId,setSelectedId]=useState(null);
+  const assignedIds=instructorStudents.filter(is=>is.instructorUserId===instructorUserId).map(is=>is.studentId);
+  const profiles=studentProfiles.filter(p=>assignedIds.includes(p.id)&&p.active);
+  if(selectedId){
+    const profile=profiles.find(p=>p.id===selectedId);
+    if(!profile)return<div style={{padding:20}}>生徒が見つかりません</div>;
+    return<StudentDetail
+      profile={profile}
+      subjects={allSubjects.filter(s=>s.studentId===selectedId)}
+      schedules={allSchedules.filter(s=>s.studentId===selectedId)}
+      dailyRecs={allDailyRecs.filter(r=>r.studentId===selectedId)}
+      instructorNotes={instructorNotes.filter(n=>n.studentId===selectedId)}
+      instructorUserId={instructorUserId}
+      onUpdateNotes={setInstructorNotes}
+      onBack={()=>setSelectedId(null)}
+    />;
+  }
+  return<StudentList
+    profiles={profiles}
+    allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs}
+    instructorNotes={instructorNotes}
+    onSelect={setSelectedId}
+  />;
+}
+
+/* ─── 管理者ビュー ───────────────────────────────── */
+function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructorStudents,setInstructorStudents}){
+  const[tab,setTab]=useState('students');
+  const[addMode,setAddMode]=useState(null); // 'student'|'instructor'|'assign'
+  const[form,setForm]=useState({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
+  const[assignInst,setAssignInst]=useState('');
+  const[assignSt,setAssignSt]=useState('');
+
+  const instructors=users.filter(u=>u.role==='instructor');
+  const students=users.filter(u=>u.role==='student');
+
+  const addStudent=()=>{
+    if(!form.name.trim()||!form.email.trim())return;
+    const uid=`u_${Date.now()}`,sid=`st_${Date.now()}`;
+    setUsers(p=>[...p,{id:uid,name:form.name,email:form.email,role:'student',studentId:sid,active:true}]);
+    setStudentProfiles(p=>[...p,{id:sid,userId:uid,name:form.name,grade:form.grade,
+      targetGraduateSchool:form.targetGraduateSchool,department:form.department,
+      examDate:form.examDate,startDate:todayStr(),weekdayStudyHours:2,weekendStudyHours:4,
+      weeklyTargetHours:Number(form.weeklyTargetHours)||12,totalHoursGoal:Number(form.totalHoursGoal)||350,
+      active:true,onboarded:false}]);
+    setForm({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
+    setAddMode(null);
+  };
+  const addInstructor=()=>{
+    if(!form.name.trim()||!form.email.trim())return;
+    setUsers(p=>[...p,{id:`u_${Date.now()}`,name:form.name,email:form.email,role:'instructor',active:true}]);
+    setForm({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
+    setAddMode(null);
+  };
+  const addAssign=()=>{
+    if(!assignInst||!assignSt)return;
+    if(instructorStudents.some(is=>is.instructorUserId===assignInst&&is.studentId===assignSt))return;
+    const stUser=users.find(u=>u.studentId===assignSt);
+    setInstructorStudents(p=>[...p,{id:`is_${Date.now()}`,instructorUserId:assignInst,studentId:assignSt}]);
+    setAssignInst('');setAssignSt('');setAddMode(null);
+  };
+  const toggleActive=(id,type)=>{
+    if(type==='user')setUsers(p=>p.map(u=>u.id===id?{...u,active:!u.active}:u));
+    if(type==='profile')setStudentProfiles(p=>p.map(sp=>sp.id===id?{...sp,active:!sp.active}:sp));
+  };
+  const removeAssign=(id)=>{if(confirm('紐づけを解除しますか？'))setInstructorStudents(p=>p.filter(is=>is.id!==id));};
+
+  const inp=(key,type='text',placeholder='')=>
+    <input type={type} value={form[key]||''} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))}
+      placeholder={placeholder} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:8}}/>;
+
+  const tabStyle=(id)=>({padding:'8px 14px',border:'none',borderBottom:tab===id?`2px solid ${BRAND}`:'2px solid transparent',
+    background:'transparent',color:tab===id?BRAND:'#64748b',fontWeight:tab===id?700:500,fontSize:13,cursor:'pointer'});
+
+  return(
+    <div>
+      <div style={{background:'linear-gradient(135deg,#1e293b,#334155)',padding:'20px 18px 0',color:'#fff'}}>
+        <div style={{fontSize:11,fontWeight:700,opacity:.7,letterSpacing:.8,marginBottom:3}}>ADMIN</div>
+        <div style={{fontSize:20,fontWeight:800,marginBottom:12}}>管理者ダッシュボード</div>
+        <div style={{display:'flex',borderTop:'1px solid rgba(255,255,255,.15)'}}>
+          {[['students','生徒'],['instructors','講師'],['assignments','担当割当']].map(([id,lbl])=>(
+            <button key={id} onClick={()=>{setTab(id);setAddMode(null);}} style={{...tabStyle(id),color:tab===id?'#fff':'rgba(255,255,255,.6)',borderBottomColor:tab===id?'#fff':'transparent',padding:'10px 14px'}}>{lbl}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:'14px 14px 8px',display:'flex',flexDirection:'column',gap:12}}>
+        {/* 生徒タブ */}
+        {tab==='students'&&(
+          <>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>生徒一覧 ({students.length}名)</span>
+              <button onClick={()=>setAddMode(addMode==='student'?null:'student')} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 生徒追加</button>
+            </div>
+            {addMode==='student'&&(
+              <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
+                <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>新しい生徒を追加</div>
+                {inp('name','text','名前（例：山本さん）')}
+                {inp('email','email','メールアドレス')}
+                {inp('grade','text','学年（例：大学4年）')}
+                {inp('targetGraduateSchool','text','志望大学院')}
+                {inp('department','text','専攻')}
+                {inp('examDate','date','')}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  {inp('weeklyTargetHours','number','週目標時間(h)')}
+                  {inp('totalHoursGoal','number','累計目標時間(h)')}
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={addStudent} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>追加する</button>
+                  <button onClick={()=>setAddMode(null)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>閉じる</button>
+                </div>
+              </Card>
+            )}
+            {students.map(u=>{
+              const prof=studentProfiles.find(p=>p.id===u.studentId);
+              return(
+                <Card key={u.id} style={{padding:'12px 16px',opacity:u.active?1:.6}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div>
+                      <div style={{fontSize:14,fontWeight:700,color:'#1e293b'}}>{u.name}</div>
+                      <div style={{fontSize:11,color:'#64748b'}}>{u.email}</div>
+                      {prof&&<div style={{fontSize:11,color:'#94a3b8'}}>{prof.targetGraduateSchool} / {prof.department}</div>}
+                    </div>
+                    <button onClick={()=>{toggleActive(u.id,'user');if(prof)toggleActive(prof.id,'profile');}}
+                      style={{padding:'5px 12px',borderRadius:8,border:`1px solid ${u.active?'#fecaca':'#a7f3d0'}`,background:u.active?'#fff1f2':'#f0fdf4',color:u.active?'#dc2626':'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                      {u.active?'無効化':'有効化'}
+                    </button>
+                  </div>
+                </Card>
+              );
+            })}
+          </>
+        )}
+
+        {/* 講師タブ */}
+        {tab==='instructors'&&(
+          <>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>講師一覧 ({instructors.length}名)</span>
+              <button onClick={()=>setAddMode(addMode==='instructor'?null:'instructor')} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 講師追加</button>
+            </div>
+            {addMode==='instructor'&&(
+              <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
+                <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>新しい講師を追加</div>
+                {inp('name','text','名前（例：鈴木先生）')}
+                {inp('email','email','メールアドレス')}
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={addInstructor} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>追加する</button>
+                  <button onClick={()=>setAddMode(null)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>閉じる</button>
+                </div>
+              </Card>
+            )}
+            {instructors.map(u=>(
+              <Card key={u.id} style={{padding:'12px 16px',opacity:u.active?1:.6}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:'#1e293b'}}>{u.name}</div>
+                    <div style={{fontSize:11,color:'#64748b'}}>{u.email}</div>
+                    <div style={{fontSize:11,color:'#94a3b8'}}>担当：{instructorStudents.filter(is=>is.instructorUserId===u.id).length}名</div>
+                  </div>
+                  <button onClick={()=>toggleActive(u.id,'user')} style={{padding:'5px 12px',borderRadius:8,border:`1px solid ${u.active?'#fecaca':'#a7f3d0'}`,background:u.active?'#fff1f2':'#f0fdf4',color:u.active?'#dc2626':'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                    {u.active?'無効化':'有効化'}
+                  </button>
+                </div>
+              </Card>
+            ))}
+          </>
+        )}
+
+        {/* 担当割当タブ */}
+        {tab==='assignments'&&(
+          <>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>担当割当</span>
+              <button onClick={()=>setAddMode(addMode==='assign'?null:'assign')} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 割当追加</button>
+            </div>
+            {addMode==='assign'&&(
+              <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
+                <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>講師と生徒を紐づける</div>
+                <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>講師</label>
+                <select value={assignInst} onChange={e=>setAssignInst(e.target.value)} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:8,background:'#fff'}}>
+                  <option value=''>選択...</option>
+                  {instructors.filter(u=>u.active).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>生徒</label>
+                <select value={assignSt} onChange={e=>setAssignSt(e.target.value)} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:10,background:'#fff'}}>
+                  <option value=''>選択...</option>
+                  {studentProfiles.filter(p=>p.active).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={addAssign} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>割り当てる</button>
+                  <button onClick={()=>setAddMode(null)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>閉じる</button>
+                </div>
+              </Card>
+            )}
+            {instructors.map(inst=>{
+              const assigned=instructorStudents.filter(is=>is.instructorUserId===inst.id);
+              if(!assigned.length)return null;
+              return(
+                <Card key={inst.id} style={{padding:'12px 16px'}}>
+                  <div style={{fontWeight:700,fontSize:13,color:BRAND,marginBottom:8}}>{inst.name}</div>
+                  {assigned.map(is=>{
+                    const prof=studentProfiles.find(p=>p.id===is.studentId);
+                    return(
+                      <div key={is.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',background:'#f8fafc',borderRadius:8,marginBottom:6}}>
+                        <div style={{fontSize:13,color:'#334155',fontWeight:600}}>{prof?.name||'不明'}</div>
+                        <button onClick={()=>removeAssign(is.id)} style={{fontSize:10,padding:'3px 9px',borderRadius:7,border:'1px solid #fecaca',background:'#fff1f2',color:'#dc2626',cursor:'pointer',fontWeight:700}}>解除</button>
+                      </div>
+                    );
+                  })}
+                </Card>
+              );
+            })}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 生徒側ナビタブ ─────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   Supabase 設定
+   supabase.com でプロジェクトを作成したら以下を入力してください
+   ═══════════════════════════════════════════════════════ */
+const SUPABASE_URL      = '';   // 例: 'https://xxxxxxxxxxxx.supabase.co'
+const SUPABASE_ANON_KEY = '';   // 例: 'eyJhbGciOiJIUzI1NiIs...'
+const IS_LIVE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+const sb = IS_LIVE ? (window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) || null) : null;
+
+/* ─── DB同期セッター（楽観的更新 + Supabaseへ書き込み） ── */
+function makeDbSetter(localSetter, tableName) {
+  return (updater) => {
+    localSetter(prev => {
+      const next = typeof updater === 'function' ? updater(Array.isArray(prev)?prev:[]) : updater;
+      if (!sb || !Array.isArray(next)) return next;
+      const prevMap = new Map((prev||[]).map(x=>[x.id, JSON.stringify(x)]));
+      const nextMap = new Map(next.map(x=>[x.id, JSON.stringify(x)]));
+      const toDelete = (prev||[]).filter(x=>!nextMap.has(x.id)).map(x=>x.id);
+      const toUpsert = next.filter(x=>!prevMap.has(x.id)||prevMap.get(x.id)!==nextMap.get(x.id));
+      if(toDelete.length) sb.from(tableName).delete().in('id',toDelete).then(r=>r.error&&console.error('[DB delete]',r.error));
+      if(toUpsert.length) sb.from(tableName).upsert(toUpsert).then(r=>r.error&&console.error('[DB upsert]',r.error));
+      return next;
+    });
+  };
+}
+
+/* ─── ログイン画面 ─────────────────────────────────────── */
+function LoginScreen(){
+  const[email,setEmail]=useState('');
+  const[pass,setPass]=useState('');
+  const[mode,setMode]=useState('login');
+  const[loading,setLoading]=useState(false);
+  const[err,setErr]=useState('');
+  const[msg,setMsg]=useState('');
+
+  const go=async()=>{
+    if(!email||!pass){setErr('メールとパスワードを入力してください');return;}
+    setLoading(true);setErr('');
+    if(mode==='login'){
+      const{error}=await sb.auth.signInWithPassword({email,password:pass});
+      if(error)setErr(error.message==='Invalid login credentials'?'メールまたはパスワードが正しくありません':error.message);
+    }else{
+      if(pass.length<6){setErr('パスワードは6文字以上');setLoading(false);return;}
+      const{error}=await sb.auth.signUp({email,password:pass});
+      if(error)setErr(error.message);
+      else setMsg('確認メールを送りました。メール内のリンクをクリック後、ログインしてください。');
+    }
+    setLoading(false);
+  };
+
+  return(
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#4f46e5,#7c3aed)',padding:20}}>
+      <div style={{background:'#fff',borderRadius:20,padding:32,maxWidth:380,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,.2)'}}>
+        <div style={{textAlign:'center',marginBottom:24}}>
+          <div style={{fontSize:40,marginBottom:8}}>🎓</div>
+          <div style={{fontSize:22,fontWeight:800,color:'#1e293b'}}>ESMA</div>
+          <div style={{fontSize:13,color:'#64748b',marginTop:4}}>院試サポートアプリ</div>
+        </div>
+        {msg?(
+          <div style={{background:'#f0fdf4',border:'1px solid #a7f3d0',borderRadius:10,padding:'14px 16px',color:'#059669',fontSize:13,lineHeight:1.7}}>{msg}</div>
+        ):(
+          <>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>メールアドレス</label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com"
+                style={{width:'100%',padding:'11px 13px',borderRadius:10,border:'1.5px solid #e2e8f0',fontSize:14}}/>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={{fontSize:11,fontWeight:700,color:'#64748b',display:'block',marginBottom:4}}>パスワード {mode==='signup'&&<span style={{color:'#94a3b8',fontWeight:500}}>(6文字以上)</span>}</label>
+              <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&go()}
+                style={{width:'100%',padding:'11px 13px',borderRadius:10,border:'1.5px solid #e2e8f0',fontSize:14}}/>
+            </div>
+            {err&&<div style={{background:'#fff1f2',border:'1px solid #fecaca',borderRadius:8,padding:'8px 12px',color:'#dc2626',fontSize:12,marginBottom:12}}>{err}</div>}
+            <button onClick={go} disabled={loading}
+              style={{width:'100%',padding:'13px',borderRadius:12,border:'none',background:loading?'#a5b4fc':BRAND,color:'#fff',fontWeight:800,fontSize:15,cursor:loading?'not-allowed':'pointer',marginBottom:12}}>
+              {loading?'処理中...':(mode==='login'?'ログイン':'アカウント作成')}
+            </button>
+            <button onClick={()=>{setMode(m=>m==='login'?'signup':'login');setErr('');}}
+              style={{width:'100%',padding:'10px',borderRadius:12,border:'1.5px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:600,fontSize:13,cursor:'pointer'}}>
+              {mode==='login'?'初めての方はこちら（アカウント作成）':'ログイン画面に戻る'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 未アクティベート画面 ─────────────────────────────── */
+function WaitingScreen({email,onLogout}){
+  return(
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#f8fafc',padding:20}}>
+      <div style={{background:'#fff',borderRadius:20,padding:32,maxWidth:360,width:'100%',textAlign:'center',boxShadow:'0 4px 20px rgba(0,0,0,.08)'}}>
+        <div style={{fontSize:40,marginBottom:12}}>⏳</div>
+        <div style={{fontSize:18,fontWeight:800,color:'#1e293b',marginBottom:8}}>アカウントを確認中</div>
+        <div style={{fontSize:13,color:'#64748b',lineHeight:1.7,marginBottom:20}}>
+          <strong>{email}</strong> のアカウントはまだ講師によって有効化されていません。<br/>
+          講師に連絡してアカウントを有効化してもらってください。
+        </div>
+        <button onClick={onLogout} style={{padding:'10px 24px',borderRadius:10,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:600,fontSize:13,cursor:'pointer'}}>ログアウト</button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Supabase版メインアプリ ───────────────────────────── */
+function SupabaseApp(){
+  const[authUser,setAuthUser]=useState(null);
+  const[authLoading,setAuthLoading]=useState(true);
+  const[dataLoading,setDataLoading]=useState(false);
+  const[dataErr,setDataErr]=useState(null);
+  const[currentRole,setCurrentRole]=useState(null);
+  const[currentUserId,setCurrentUserId]=useState(null);
+  const[currentStudentId,setCurrentStudentId]=useState(null);
+  const[tab,setTab]=useState('dashboard');
+
+  // 生徒用
+  const[currentProfile,setCurrentProfile]=useState(null);
+  const[subjects,setSubjectsRaw]=useState([]);
+  const[schedules,setSchedulesRaw]=useState([]);
+  const[dailyRecs,setDailyRecsRaw]=useState([]);
+  const[tasks,setTasksRaw]=useState([]);
+  const[myNotes,setMyNotes]=useState([]);
+
+  // 講師用
+  const[studentProfiles,setStudentProfilesRaw]=useState([]);
+  const[allSubjects,setAllSubjectsRaw]=useState([]);
+  const[allSchedules,setAllSchedulesRaw]=useState([]);
+  const[allDailyRecs,setAllDailyRecsRaw]=useState([]);
+  const[instructorStudents,setInstructorStudentsRaw]=useState([]);
+  const[instructorNotes,setInstructorNotesRaw]=useState([]);
+
+  // 管理者用
+  const[adminUsers,setAdminUsersRaw]=useState([]);
+  const[adminProfiles,setAdminProfilesRaw]=useState([]);
+  const[adminIS,setAdminISRaw]=useState([]);
+
+  // DB同期セッター
+  const setSubjects      =useMemo(()=>makeDbSetter(setSubjectsRaw,     'subjects'),     []);
+  const setSchedules     =useMemo(()=>makeDbSetter(setSchedulesRaw,    'schedules'),    []);
+  const setDailyRecs     =useMemo(()=>makeDbSetter(setDailyRecsRaw,    'daily_records'),[]);
+  const setTasks         =useMemo(()=>makeDbSetter(setTasksRaw,        'tasks'),        []);
+  const setInstructorNotes=useMemo(()=>makeDbSetter(setInstructorNotesRaw,'instructor_notes'),[]);
+  const setAdminUsers    =useMemo(()=>makeDbSetter(setAdminUsersRaw,   'users'),        []);
+  const setAdminProfiles =useMemo(()=>makeDbSetter(setAdminProfilesRaw,'student_profiles'),[]);
+  const setAdminIS       =useMemo(()=>makeDbSetter(setAdminISRaw,      'instructor_students'),[]);
+
+  // cfg互換
+  const cfg=useMemo(()=>({...INIT_CFG,...currentProfile}),[currentProfile]);
+  const setCfg=useCallback((upd)=>{
+    setCurrentProfile(prev=>{
+      const next={...prev,...(typeof upd==='function'?upd(prev):upd)};
+      if(next?.id)sb.from('student_profiles').update(next).eq('id',next.id).then(r=>r.error&&console.error(r.error));
+      return next;
+    });
+  },[]);
+  const[onboarded,setOnboardedState]=useState(false);
+  const setOnboarded=(v)=>{
+    setOnboardedState(v);
+    if(currentProfile?.id)sb.from('student_profiles').update({onboarded:v}).eq('id',currentProfile.id).then(r=>r.error&&console.error(r.error));
+  };
+
+  // Auth
+  useEffect(()=>{
+    sb.auth.getSession().then(({data:{session}})=>{setAuthUser(session?.user||null);setAuthLoading(false);});
+    const{data:{subscription}}=sb.auth.onAuthStateChange((_,session)=>setAuthUser(session?.user||null));
+    return()=>subscription.unsubscribe();
+  },[]);
+
+  useEffect(()=>{if(authUser?.id)loadData(authUser.id);},[authUser?.id]);
+
+  const loadData=async(uid)=>{
+    setDataLoading(true);setDataErr(null);
+    try{
+      const{data:u,error:ue}=await sb.from('users').select('*').eq('id',uid).single();
+      if(ue||!u)throw new Error('ユーザー情報が見つかりません。管理者に連絡してください。');
+      setCurrentRole(u.role);setCurrentUserId(uid);
+      if(u.role==='student'){
+        const sid=u.studentId;setCurrentStudentId(sid);
+        const[pr,su,sc,dr,ta,no]=await Promise.all([
+          sb.from('student_profiles').select('*').eq('id',sid).single(),
+          sb.from('subjects').select('*').eq('studentId',sid),
+          sb.from('schedules').select('*').eq('studentId',sid),
+          sb.from('daily_records').select('*').eq('studentId',sid),
+          sb.from('tasks').select('*').eq('studentId',sid),
+          sb.from('instructor_notes').select('*').eq('studentId',sid),
+        ]);
+        setCurrentProfile(pr.data);setOnboardedState(pr.data?.onboarded||false);
+        setSubjectsRaw(su.data||[]);setSchedulesRaw(sc.data||[]);
+        setDailyRecsRaw(dr.data||[]);setTasksRaw(ta.data||[]);setMyNotes(no.data||[]);
+      }else if(u.role==='instructor'){
+        const{data:is}=await sb.from('instructor_students').select('*').eq('instructorUserId',uid);
+        const sids=(is||[]).map(x=>x.studentId);
+        setInstructorStudentsRaw(is||[]);
+        if(sids.length){
+          const[pr,su,sc,dr,no]=await Promise.all([
+            sb.from('student_profiles').select('*').in('id',sids),
+            sb.from('subjects').select('*').in('studentId',sids),
+            sb.from('schedules').select('*').in('studentId',sids),
+            sb.from('daily_records').select('*').in('studentId',sids),
+            sb.from('instructor_notes').select('*').eq('instructorUserId',uid),
+          ]);
+          setStudentProfilesRaw(pr.data||[]);setAllSubjectsRaw(su.data||[]);
+          setAllSchedulesRaw(sc.data||[]);setAllDailyRecsRaw(dr.data||[]);
+          setInstructorNotesRaw(no.data||[]);
+        }
+      }else{
+        const[us,pr,is]=await Promise.all([
+          sb.from('users').select('*'),
+          sb.from('student_profiles').select('*'),
+          sb.from('instructor_students').select('*'),
+        ]);
+        setAdminUsersRaw(us.data||[]);setAdminProfilesRaw(pr.data||[]);setAdminISRaw(is.data||[]);
+      }
+    }catch(e){setDataErr(e.message);}
+    finally{setDataLoading(false);}
+  };
+
+  const logout=()=>sb.auth.signOut();
+  const handleOnboardingComplete=()=>{setOnboarded(true);setTab('today');};
+
+  if(authLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#64748b',fontSize:13}}>読み込み中...</div>;
+  if(!authUser)return<LoginScreen/>;
+  if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#64748b',fontSize:13}}>データ取得中...</div>;
+  if(dataErr)return(
+    <div style={{padding:24,maxWidth:400,margin:'60px auto'}}>
+      <div style={{background:'#fff1f2',border:'1px solid #fecaca',borderRadius:12,padding:16,color:'#dc2626',marginBottom:16,fontSize:13}}>{dataErr}</div>
+      <button onClick={()=>loadData(authUser.id)} style={{padding:'10px 20px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:700,cursor:'pointer',marginRight:8}}>再試行</button>
+      <button onClick={logout} style={{padding:'10px 20px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:600,cursor:'pointer'}}>ログアウト</button>
+    </div>
+  );
+  if(!currentRole)return<WaitingScreen email={authUser.email} onLogout={logout}/>;
+
+  const hdr=(
+    <div style={{background:'#fff',borderBottom:'1px solid #e8ecf0',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:150}}>
+      <span style={{fontSize:13,fontWeight:800,color:BRAND}}>ESMA</span>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <span style={{fontSize:10,color:'#94a3b8',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{authUser.email}</span>
+        <button onClick={logout} style={{padding:'4px 10px',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>ログアウト</button>
+      </div>
+    </div>
+  );
+  const navSt={position:'fixed',bottom:0,left:0,right:0,background:'rgba(255,255,255,.97)',borderTop:'1px solid #e2e8f0',display:'flex',backdropFilter:'blur(10px)',zIndex:100,paddingBottom:'env(safe-area-inset-bottom,0px)'};
+  const nb=(a)=>({flex:1,padding:'8px 2px 6px',border:'none',background:'transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1,color:a?BRAND:'#94a3b8'});
+
+  if(currentRole==='student'){
+    const latestAction=myNotes.filter(n=>!n.checked&&n.studentVisibleAction).sort((a,b)=>b.date.localeCompare(a.date))[0];
+    return(
+      <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc',paddingBottom:68}}>
+        {hdr}
+        {!onboarded&&currentProfile&&<Onboarding subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} cfg={cfg} setCfg={setCfg} onComplete={handleOnboardingComplete}/>}
+        {latestAction&&(
+          <div style={{margin:'10px 14px 0',padding:'11px 14px',background:'#eef2ff',borderRadius:11,border:'1px solid #c7d2fe',display:'flex',gap:8,alignItems:'flex-start'}}>
+            <span style={{fontSize:16,flexShrink:0}}>📌</span>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:'#4f46e5',marginBottom:2}}>講師からのアクション</div>
+              <div style={{fontSize:13,color:'#1e293b',lineHeight:1.5}}>{latestAction.studentVisibleAction}</div>
+              {latestAction.nextMeetingDate&&<div style={{fontSize:11,color:'#6366f1',marginTop:3}}>次回面談：{latestAction.nextMeetingDate}</div>}
+            </div>
+          </div>
+        )}
+        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs}/>}
+        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
+        {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks}/>}
+        {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
+        <nav style={navSt}>{STUDENT_TABS.map(t=><button key={t.id} style={nb(tab===t.id)} onClick={()=>setTab(t.id)}><span style={{fontSize:18}}>{t.icon}</span><span style={{fontSize:9,fontWeight:tab===t.id?800:500}}>{t.label}</span></button>)}</nav>
+      </div>
+    );
+  }
+  if(currentRole==='instructor')return(
+    <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
+      {hdr}
+      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorStudents={instructorStudents} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes}/>
+    </div>
+  );
+  return(
+    <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
+      {hdr}
+      <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS}/>
+    </div>
+  );
+}
+
+const STUDENT_TABS=[
+  {id:'dashboard',label:'ダッシュ',icon:'📊'},
+  {id:'today',    label:'今日の記録',icon:'✍️'},
+  {id:'plan',     label:'学習計画',icon:'📋'},
+  {id:'settings', label:'設定',icon:'⚙️'},
+];
+
+/* ─── メインアプリ（複数ユーザー対応） ──────────── */
+function App(){
+  // セッション（ロール切替）
+  const[session,setSession]=useStorage('esma_v2_session',DEFAULT_SESSION);
+  // 全データ（studentId付き）
+  const[users,setUsers]=useStorage('esma_v2_users',INIT_USERS);
+  const[studentProfiles,setStudentProfiles]=useStorage('esma_v2_students',INIT_STUDENT_PROFILES);
+  const[allSubjects,setAllSubjects]=useStorage('esma_v2_subjects',INIT_SUBJECTS_V2);
+  const[allSchedules,setAllSchedules]=useStorage('esma_v2_schedules',INIT_SCHEDULES_V2);
+  const[allDailyRecs,setAllDailyRecs]=useStorage('esma_v2_daily',INIT_DAILY_V2);
+  const[allTasks,setAllTasks]=useStorage('esma_v2_tasks',INIT_TASKS_V2);
+  const[instructorNotes,setInstructorNotes]=useStorage('esma_v2_inotes',INIT_INSTRUCTOR_NOTES);
+  const[instructorStudents,setInstructorStudents]=useStorage('esma_v2_instructor_students',INIT_INSTRUCTOR_STUDENTS);
+  const[tab,setTab]=useState('dashboard');
+
+  // 現在のユーザー・ロール解決
+  const currentUser=useMemo(()=>users.find(u=>u.id===session.userId)||users[0],[users,session.userId]);
+  const currentRole=currentUser?.role||'student';
+  const currentStudentId=currentUser?.studentId||null;
+  const currentProfile=useMemo(()=>studentProfiles.find(p=>p.id===currentStudentId),[studentProfiles,currentStudentId]);
+  const onboarded=currentProfile?.onboarded||false;
+
+  // 現在の生徒に絞り込んだデータ（生徒ロール用）
+  const subjects=useMemo(()=>allSubjects.filter(s=>s.studentId===currentStudentId),[allSubjects,currentStudentId]);
+  const schedules=useMemo(()=>allSchedules.filter(s=>s.studentId===currentStudentId),[allSchedules,currentStudentId]);
+  const dailyRecs=useMemo(()=>allDailyRecs.filter(r=>r.studentId===currentStudentId),[allDailyRecs,currentStudentId]);
+  const tasks=useMemo(()=>allTasks.filter(t=>t.studentId===currentStudentId),[allTasks,currentStudentId]);
+
+  // studentIdを自動付与するラッパーセッター（既存コンポーネントをそのまま使うため）
+  const makeSetterFor=(setAll,sid)=>(updater)=>{
+    setAll(prev=>{
+      const others=prev.filter(x=>x.studentId!==sid);
+      const mine=prev.filter(x=>x.studentId===sid);
+      const next=typeof updater==='function'?updater(mine):updater;
+      return[...others,...next.map(x=>({...x,studentId:sid}))];
+    });
+  };
+  const setSubjects  =useMemo(()=>makeSetterFor(setAllSubjects,  currentStudentId),[currentStudentId]);
+  const setSchedules =useMemo(()=>makeSetterFor(setAllSchedules, currentStudentId),[currentStudentId]);
+  const setDailyRecs =useMemo(()=>makeSetterFor(setAllDailyRecs, currentStudentId),[currentStudentId]);
+  const setTasks     =useMemo(()=>makeSetterFor(setAllTasks,     currentStudentId),[currentStudentId]);
+
+  // cfg（プロファイルを既存コンポーネント互換の形で提供）
+  const cfg=useMemo(()=>({...INIT_CFG,...currentProfile}),[currentProfile]);
+  const setCfg=useCallback((updater)=>{
+    setStudentProfiles(prev=>prev.map(p=>p.id===currentStudentId
+      ?{...p,...(typeof updater==='function'?updater(p):updater)}:p));
+  },[currentStudentId]);
+
+  const setOnboarded=(v)=>setStudentProfiles(prev=>prev.map(p=>p.id===currentStudentId?{...p,onboarded:v}:p));
+  const handleOnboardingComplete=()=>{setOnboarded(true);setTab('today');};
+
+  // ロール切替時にタブをリセット
+  useEffect(()=>{setTab('dashboard');},[session.userId]);
+
+  const navStyle={position:'fixed',bottom:0,left:0,right:0,background:'rgba(255,255,255,.97)',borderTop:'1px solid #e2e8f0',display:'flex',backdropFilter:'blur(10px)',zIndex:100,paddingBottom:'env(safe-area-inset-bottom,0px)'};
+  const navBtn=(active)=>({flex:1,padding:'8px 2px 6px',border:'none',background:'transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1,color:active?BRAND:'#94a3b8',transition:'color .15s'});
+
+  // ─ 生徒ロール ─
+  if(currentRole==='student'){
+    return(
+      <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc',paddingBottom:68}}>
+        {/* ロール切替バー */}
+        <div style={{background:'#fff',borderBottom:'1px solid #e8ecf0',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:150}}>
+          <span style={{fontSize:13,fontWeight:800,color:BRAND,letterSpacing:.3}}>ESMA</span>
+          <RoleSwitcher session={session} setSession={setSession} users={users}/>
+        </div>
+        {!onboarded&&currentProfile&&(
+          <Onboarding subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} cfg={cfg} setCfg={setCfg} onComplete={handleOnboardingComplete}/>
+        )}
+        {/* 講師からの次回アクション（未確認の最新1件を表示） */}
+        {(()=>{
+          const note=instructorNotes
+            .filter(n=>n.studentId===currentStudentId&&!n.checked&&n.studentVisibleAction)
+            .sort((a,b)=>b.date.localeCompare(a.date))[0];
+          if(!note)return null;
+          return(
+            <div style={{margin:'10px 14px 0',padding:'11px 14px',background:'#eef2ff',borderRadius:11,border:'1px solid #c7d2fe',display:'flex',gap:8,alignItems:'flex-start'}}>
+              <span style={{fontSize:16,flexShrink:0}}>📌</span>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'#4f46e5',marginBottom:2}}>講師からのアクション</div>
+                <div style={{fontSize:13,color:'#1e293b',lineHeight:1.5}}>{note.studentVisibleAction}</div>
+                {note.nextMeetingDate&&<div style={{fontSize:11,color:'#6366f1',marginTop:3}}>次回面談：{note.nextMeetingDate}</div>}
+              </div>
+            </div>
+          );
+        })()}
+        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs}/>}
+        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
+        {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks}/>}
+        {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
+        <nav style={navStyle}>
+          {STUDENT_TABS.map(t=>(
+            <button key={t.id} style={navBtn(tab===t.id)} onClick={()=>setTab(t.id)}>
+              <span style={{fontSize:18}}>{t.icon}</span>
+              <span style={{fontSize:9,fontWeight:tab===t.id?800:500}}>{t.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+    );
+  }
+
+  // ─ 講師ロール ─
+  if(currentRole==='instructor'){
+    return(
+      <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
+        <div style={{background:'#fff',borderBottom:'1px solid #e8ecf0',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:150}}>
+          <span style={{fontSize:13,fontWeight:800,color:BRAND,letterSpacing:.3}}>ESMA</span>
+          <RoleSwitcher session={session} setSession={setSession} users={users}/>
+        </div>
+        <InstructorView
+          instructorUserId={currentUser.id}
+          studentProfiles={studentProfiles}
+          allSubjects={allSubjects}
+          allSchedules={allSchedules}
+          allDailyRecs={allDailyRecs}
+          instructorStudents={instructorStudents}
+          instructorNotes={instructorNotes}
+          setInstructorNotes={setInstructorNotes}
+        />
+      </div>
+    );
+  }
+
+  // ─ 管理者ロール ─
+  return(
+    <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
+      <div style={{background:'#fff',borderBottom:'1px solid #e8ecf0',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:150}}>
+        <span style={{fontSize:13,fontWeight:800,color:BRAND,letterSpacing:.3}}>ESMA</span>
+        <RoleSwitcher session={session} setSession={setSession} users={users}/>
+      </div>
+      <AdminView
+        users={users} setUsers={setUsers}
+        studentProfiles={studentProfiles} setStudentProfiles={setStudentProfiles}
+        instructorStudents={instructorStudents} setInstructorStudents={setInstructorStudents}
+      />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(IS_LIVE?<SupabaseApp/>:<App/>);
+</script>
+</body>
+</html>
