@@ -2573,5 +2573,20 @@ function App(){
       </div>
       <AdminView
         users={users} setUsers={setUsers}
-        studentProfiles={studentProfiles} setStudentProfiles={setStudentProfiles}
-        instructorStudents={instructorStudents} setInstructorStudents={setInstructorS
+        instructorStudents={instructorStudents} setInstructorStudents={setInstructorStudents}
+        allSubjects={allSubjects} allSchedules={allSchedules}
+        allDailyRecs={allDailyRecs}
+        instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes}
+        currentUserId={currentUser?.id}
+        allTasks={allTasks} setAllTasks={setAllTasks}
+      />
+    </div>
+  );
+}
+
+const App=IS_LIVE?SupabaseApp:DemoApp;
+const root=ReactDOM.createRoot(document.getElementById('root'));
+root.render(<React.StrictMode><App/></React.StrictMode>);
+</script>
+</body>
+</html>
