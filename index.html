@@ -1865,7 +1865,7 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
 function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,setStudentProfiles,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks}){
   const[selectedId,setSelectedId]=useState(null);
   const[addMode,setAddMode]=useState(false);
-  const[form,setForm]=useState({name:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
+  const[form,setForm]=useState({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
   const profiles=(studentProfiles||[]).filter(p=>p.active);
   const inp=(key,type='text',placeholder='')=>
     <input type={type} value={form[key]||''} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))}
@@ -1873,12 +1873,12 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
   const addStudent=()=>{
     if(!form.name.trim())return;
     const sid=`st_${Date.now()}`;
-    if(setStudentProfiles)setStudentProfiles(p=>[...(p||[]),{id:sid,name:form.name,grade:form.grade,
+    if(setStudentProfiles)setStudentProfiles(p=>[...(p||[]),{id:sid,name:form.name,email:form.email,grade:form.grade,
       targetGraduateSchool:form.targetGraduateSchool,department:form.department,
       examDate:form.examDate,startDate:todayStr(),weekdayStudyHours:2,weekendStudyHours:4,
       weeklyTargetHours:Number(form.weeklyTargetHours)||12,totalHoursGoal:Number(form.totalHoursGoal)||350,
       active:true,onboarded:false}]);
-    setForm({name:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
+    setForm({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
     setAddMode(false);
   };
   if(selectedId){
@@ -1910,6 +1910,7 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
           <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
             <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>新しい生徒を追加</div>
             {inp('name','text','名前（例：山本さん）')}
+            {inp('email','email','生徒のメールアドレス（ログインに使用）')}
             {inp('grade','text','学年（例：大学4年）')}
             {inp('targetGraduateSchool','text','志望大学院')}
             {inp('department','text','専攻')}
@@ -1979,7 +1980,7 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
     if(!form.name.trim()||!form.email.trim())return;
     const uid=`u_${Date.now()}`,sid=`st_${Date.now()}`;
     setUsers(p=>[...p,{id:uid,name:form.name,email:form.email,role:'student',studentId:sid,active:true}]);
-    setStudentProfiles(p=>[...p,{id:sid,userId:uid,name:form.name,grade:form.grade,
+    setStudentProfiles(p=>[...p,{id:sid,userId:uid,name:form.name,email:form.email,grade:form.grade,
       targetGraduateSchool:form.targetGraduateSchool,department:form.department,
       examDate:form.examDate,startDate:todayStr(),weekdayStudyHours:2,weekendStudyHours:4,
       weeklyTargetHours:Number(form.weeklyTargetHours)||12,totalHoursGoal:Number(form.totalHoursGoal)||350,
