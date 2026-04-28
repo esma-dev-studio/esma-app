@@ -1829,10 +1829,27 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
 }
 
 /* ─── 講師ビュー（ルーター） ─────────────────────── */
-function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorStudents,instructorNotes,setInstructorNotes}){
+function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorStudents,instructorNotes,setInstructorNotes,setStudentProfiles,setInstructorStudents}){
   const[selectedId,setSelectedId]=useState(null);
+  const[addMode,setAddMode]=useState(false);
+  const[form,setForm]=useState({name:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
   const assignedIds=instructorStudents.filter(is=>is.instructorUserId===instructorUserId).map(is=>is.studentId);
   const profiles=studentProfiles.filter(p=>assignedIds.includes(p.id)&&p.active);
+  const inp=(key,type='text',placeholder='')=>
+    <input type={type} value={form[key]||''} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))}
+      placeholder={placeholder} style={{width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:8}}/>;
+  const addStudent=()=>{
+    if(!form.name.trim())return;
+    const sid=`st_${Date.now()}`;
+    if(setStudentProfiles)setStudentProfiles(p=>[...(p||[]),{id:sid,name:form.name,grade:form.grade,
+      targetGraduateSchool:form.targetGraduateSchool,department:form.department,
+      examDate:form.examDate,startDate:todayStr(),weekdayStudyHours:2,weekendStudyHours:4,
+      weeklyTargetHours:Number(form.weeklyTargetHours)||12,totalHoursGoal:Number(form.totalHoursGoal)||350,
+      active:true,onboarded:false}]);
+    if(setInstructorStudents)setInstructorStudents(p=>[...(p||[]),{id:`is_${Date.now()}`,instructorUserId,studentId:sid}]);
+    setForm({name:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
+    setAddMode(false);
+  };
   if(selectedId){
     const profile=profiles.find(p=>p.id===selectedId);
     if(!profile)return<div style={{padding:20}}>生徒が見つかりません</div>;
@@ -1847,22 +1864,64 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
       onBack={()=>setSelectedId(null)}
     />;
   }
-  return<StudentList
-    profiles={profiles}
-    allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs}
-    instructorNotes={instructorNotes}
-    onSelect={setSelectedId}
-  />;
+  return(
+    <div>
+      <div style={{padding:'12px 14px 8px',display:'flex',justifyContent:'flex-end'}}>
+        <button onClick={()=>setAddMode(p=>!p)} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 生徒追加</button>
+      </div>
+      {addMode&&(
+        <div style={{margin:'0 14px 10px'}}>
+          <Card style={{border:`1.5px solid ${BRAND}`,padding:'14px 16px'}}>
+            <div style={{fontWeight:800,fontSize:13,color:BRAND,marginBottom:10}}>新しい生徒を追加</div>
+            {inp('name','text','名前（例：山本さん）')}
+            {inp('grade','text','学年（例：大学4年）')}
+            {inp('targetGraduateSchool','text','志望大学院')}
+            {inp('department','text','専攻')}
+            {inp('examDate','date','')}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {inp('weeklyTargetHours','number','週目標時間(h)')}
+              {inp('totalHoursGoal','number','累計目標時間(h)')}
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={addStudent} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>追加する</button>
+              <button onClick={()=>setAddMode(false)} style={{padding:'10px 16px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>閉じる</button>
+            </div>
+          </Card>
+        </div>
+      )}
+      <StudentList
+        profiles={profiles}
+        allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs}
+        instructorNotes={instructorNotes}
+        onSelect={setSelectedId}
+      />
+    </div>
+  );
 }
 
 /* ─── 管理者ビュー ───────────────────────────────── */
-function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructorStudents,setInstructorStudents}){
+function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructorStudents,setInstructorStudents,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,currentUserId}){
   const[tab,setTab]=useState('students');
+  const[selectedStudentId,setSelectedStudentId]=useState(null);
   const[addMode,setAddMode]=useState(null); // 'student'|'instructor'|'assign'
   const[form,setForm]=useState({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
   const[assignInst,setAssignInst]=useState('');
   const[assignSt,setAssignSt]=useState('');
 
+  if(selectedStudentId){
+    const profile=studentProfiles.find(p=>p.id===selectedStudentId);
+    if(!profile)return<div style={{padding:20}}>生徒が見つかりません<button onClick={()=>setSelectedStudentId(null)} style={{marginLeft:10,padding:'4px 10px',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer'}}>戻る</button></div>;
+    return<StudentDetail
+      profile={profile}
+      subjects={(allSubjects||[]).filter(s=>s.studentId===selectedStudentId)}
+      schedules={(allSchedules||[]).filter(s=>s.studentId===selectedStudentId)}
+      dailyRecs={(allDailyRecs||[]).filter(r=>r.studentId===selectedStudentId)}
+      instructorNotes={(instructorNotes||[]).filter(n=>n.studentId===selectedStudentId)}
+      instructorUserId={currentUserId}
+      onUpdateNotes={setInstructorNotes||((()=>{}))}
+      onBack={()=>setSelectedStudentId(null)}
+    />;
+  }
   const instructors=users.filter(u=>u.role==='instructor');
   const students=users.filter(u=>u.role==='student');
 
@@ -1946,7 +2005,7 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
             {students.map(u=>{
               const prof=studentProfiles.find(p=>p.id===u.studentId);
               return(
-                <Card key={u.id} style={{padding:'12px 16px',opacity:u.active?1:.6}}>
+                <Card key={u.id} onClick={()=>prof&&setSelectedStudentId(prof.id)} style={{padding:'12px 16px',opacity:u.active?1:.6,cursor:prof?'pointer':'default'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                     <div>
                       <div style={{fontSize:14,fontWeight:700,color:'#1e293b'}}>{u.name}</div>
@@ -2188,6 +2247,10 @@ function SupabaseApp(){
   const[adminUsers,setAdminUsersRaw]=useState([]);
   const[adminProfiles,setAdminProfilesRaw]=useState([]);
   const[adminIS,setAdminISRaw]=useState([]);
+  const[adminAllSubjects,setAdminAllSubjectsRaw]=useState([]);
+  const[adminAllSchedules,setAdminAllSchedulesRaw]=useState([]);
+  const[adminAllDailyRecs,setAdminAllDailyRecsRaw]=useState([]);
+  const[adminInstructorNotes,setAdminInstructorNotesRaw]=useState([]);
 
   // DB同期セッター
   const setSubjects      =useMemo(()=>makeDbSetter(setSubjectsRaw,     'subjects'),     []);
@@ -2198,6 +2261,12 @@ function SupabaseApp(){
   const setAdminUsers    =useMemo(()=>makeDbSetter(setAdminUsersRaw,   'users'),        []);
   const setAdminProfiles =useMemo(()=>makeDbSetter(setAdminProfilesRaw,'student_profiles'),[]);
   const setAdminIS       =useMemo(()=>makeDbSetter(setAdminISRaw,      'instructor_students'),[]);
+  const setAdminAllSubjects=useMemo(()=>makeDbSetter(setAdminAllSubjectsRaw,'subjects'),[]);
+  const setAdminAllSchedules=useMemo(()=>makeDbSetter(setAdminAllSchedulesRaw,'schedules'),[]);
+  const setAdminAllDailyRecs=useMemo(()=>makeDbSetter(setAdminAllDailyRecsRaw,'daily_records'),[]);
+  const setAdminInstructorNotes=useMemo(()=>makeDbSetter(setAdminInstructorNotesRaw,'instructor_notes'),[]);
+  const setStudentProfilesDb=useMemo(()=>makeDbSetter(setStudentProfilesRaw,'student_profiles'),[]);
+  const setInstructorStudentsDb=useMemo(()=>makeDbSetter(setInstructorStudentsRaw,'instructor_students'),[]);
 
   // cfg互換
   const cfg=useMemo(()=>({...INIT_CFG,...currentProfile}),[currentProfile]);
@@ -2259,12 +2328,18 @@ function SupabaseApp(){
           setInstructorNotesRaw(no.data||[]);
         }
       }else{
-        const[us,pr,is]=await Promise.all([
+        const[us,pr,is,su,sc,dr,no]=await Promise.all([
           sb.from('users').select('*'),
           sb.from('student_profiles').select('*'),
           sb.from('instructor_students').select('*'),
+          sb.from('subjects').select('*'),
+          sb.from('schedules').select('*'),
+          sb.from('daily_records').select('*'),
+          sb.from('instructor_notes').select('*'),
         ]);
         setAdminUsersRaw(us.data||[]);setAdminProfilesRaw(pr.data||[]);setAdminISRaw(is.data||[]);
+        setAdminAllSubjectsRaw(su.data||[]);setAdminAllSchedulesRaw(sc.data||[]);
+        setAdminAllDailyRecsRaw(dr.data||[]);setAdminInstructorNotesRaw(no.data||[]);
       }
     }catch(e){setDataErr(e.message);}
     finally{setDataLoading(false);}
@@ -2324,13 +2399,13 @@ function SupabaseApp(){
   if(currentRole==='instructor')return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
-      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorStudents={instructorStudents} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes}/>
+      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorStudents={instructorStudents} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setInstructorStudents={setInstructorStudentsDb}/>
     </div>
   );
   return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
-      <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS}/>
+      <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS} allSubjects={adminAllSubjects} allSchedules={adminAllSchedules} allDailyRecs={adminAllDailyRecs} instructorNotes={adminInstructorNotes} setInstructorNotes={setAdminInstructorNotes} currentUserId={currentUserId}/>
     </div>
   );
 }
@@ -2486,4 +2561,4 @@ function App(){
 ReactDOM.createRoot(document.getElementById('root')).render(IS_LIVE?<SupabaseApp/>:<App/>);
 </script>
 </body>
-</html>
+</h
