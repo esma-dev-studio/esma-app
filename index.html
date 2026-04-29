@@ -288,7 +288,7 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
 }
 
 /* ─── 今日の学習 ──────────────────────────────────── */
-function TodayView({subjects,schedules,dailyRecs,setDailyRecs}){
+function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
   const today=todayStr();
   const todayDOW=getToday().getDay();
   const todaySubjects=useMemo(()=>
@@ -308,10 +308,11 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs}){
         status:data.status||calcRecord(subj.plannedH,data.actualHours).status,
         unmetHours:data.unmetHours??0,surplusHours:data.surplusHours??0,
         createdAt:existing?existing.createdAt:now,editedAt:now,ul:data.ul,memo:data.memo,
+        ...(studentId?{studentId}:{}),
       };
       return idx>=0?prev.map((r,i)=>i===idx?rec:r):[...prev,rec];
     });
-  },[today,setDailyRecs]);
+  },[today,setDailyRecs,studentId]);
 
   const totalPlanned=useMemo(()=>todaySubjects.reduce((a,s)=>a+s.plannedH,0),[todaySubjects]);
   const todayRecs=useMemo(()=>dailyRecs.filter(r=>r.date===today),[dailyRecs,today]);
@@ -2689,7 +2690,7 @@ function SupabaseApp(){
           </div>
         )}
         {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab}/>}
-        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
+        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studentId={currentStudentId}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks}/>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
         <nav style={navSt}>{STUDENT_TABS.map(t=><button key={t.id} style={nb(tab===t.id)} onClick={()=>setTab(t.id)}><span style={{fontSize:18}}>{t.icon}</span><span style={{fontSize:9,fontWeight:tab===t.id?800:500}}>{t.label}</span></button>)}</nav>
@@ -2805,7 +2806,7 @@ function DemoApp(){
           );
         })()}
         {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab}/>}
-        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
+        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studentId={currentStudentId}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks}/>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
         <nav style={navStyle}>
@@ -2869,8 +2870,4 @@ function DemoApp(){
 }
 
 const App=IS_LIVE?SupabaseApp:DemoApp;
-const root=ReactDOM.createRoot(document.getElementById('root'));
-root.render(<React.StrictMode><App/></React.StrictMode>);
-</script>
-</body>
-</html>
+const root=ReactDOM.createRoot(document.getElementById('root'
