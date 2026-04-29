@@ -1139,9 +1139,6 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
         );
       })()}
 
-      {/* 週次クエスト */}
-      <WeeklyQuestCard subjects={subjects} schedules={schedules} dailyRecs={dailyRecs}/>
-
       {/* 今日の達成 */}
       <Card style={{padding:'16px 18px'}}>
         <Sec>今日の達成状況（{DOW_LABELS[todayDOW]}曜日）</Sec>
@@ -1168,6 +1165,9 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
         )}
         <button onClick={()=>setTab('today')} style={{marginTop:10,width:'100%',padding:'10px',borderRadius:10,border:`1.5px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontWeight:700,fontSize:13,cursor:'pointer'}}>今日の記録をつける →</button>
       </Card>
+
+      {/* 週次クエスト */}
+      <WeeklyQuestCard subjects={subjects} schedules={schedules} dailyRecs={dailyRecs}/>
 
       {/* 今週の予定vs実績 */}
       <Card style={{padding:'16px 18px'}}>
