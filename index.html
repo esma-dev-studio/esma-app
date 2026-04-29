@@ -679,6 +679,274 @@ function StudyHeatmap({schedules,dailyRecs,today}){
 }
 
 /* ─── ダッシュボード ──────────────────────────────── */
+
+/* ─── ゲーミフィケーション ─────────────────────────── */
+const LV_THRESH=[0,5,10,20,35,55,80,110,150,200];
+function calcLevel(totalH){
+  let lv=1;
+  for(let i=0;i<LV_THRESH.length;i++){if(totalH>=LV_THRESH[i])lv=i+1;}
+  if(totalH>=200)lv=10+Math.floor((totalH-200)/50)+1;
+  const prevH=lv<=1?0:lv<=10?LV_THRESH[lv-1]:(200+(lv-11)*50);
+  const nextH=lv<10?LV_THRESH[lv]:lv===10?250:(200+(lv-10)*50);
+  const span=Math.max(1,nextH-prevH);
+  const pct=Math.min(100,Math.round((totalH-prevH)/span*100));
+  const toNext=r2(Math.max(0,nextH-totalH));
+  return{lv,nextH,prevH,pct,toNext};
+}
+
+const BADGE_DEFS=[
+  {id:'first_record',title:'初回記録',desc:'初めて学習を記録',icon:'📝'},
+  {id:'streak_3',title:'3日継続',desc:'3日連続で学習',icon:'🔥'},
+  {id:'streak_7',title:'7日継続',desc:'7日連続で学習',icon:'⚡'},
+  {id:'daily_100',title:'予定達成',desc:'1日の達成率100%以上',icon:'✅'},
+  {id:'surplus_1h',title:'前倒し達成',desc:'1日1時間以上前倒し',icon:'🚀'},
+  {id:'weekly_80',title:'週間80%達成',desc:'今週の達成率80%以上',icon:'📈'},
+  {id:'comeback',title:'復帰達成',desc:'遅れから学習を再開',icon:'💪'},
+  {id:'research_started',title:'研究計画スタート',desc:'研究計画科目で初記録',icon:'🔬'},
+];
+
+function calcBadges(dailyRecs,subjects,schedules){
+  const earned=new Set();
+  const sorted=[...dailyRecs].sort((a,b)=>a.date.localeCompare(b.date));
+  if(sorted.length>0)earned.add('first_record');
+  // 連続学習日数
+  let streak=0;
+  let sd=getToday();
+  for(let i=0;i<60;i++){
+    const ds=fmt(sd);
+    if(dailyRecs.some(r=>r.date===ds&&(r.actualHours||0)>0))streak++;
+    else break;
+    sd=addDays(sd,-1);
+  }
+  if(streak>=3)earned.add('streak_3');
+  if(streak>=7)earned.add('streak_7');
+  // daily_100
+  const today=todayStr();
+  const todayDOW=getToday().getDay();
+  const todayPl=schedules.filter(sc=>sc.dayOfWeek===todayDOW&&sc.enabled&&sc.targetHours>0).reduce((a,sc)=>a+sc.targetHours,0);
+  const todayAc=dailyRecs.filter(r=>r.date===today).reduce((a,r)=>a+(r.actualHours||0),0);
+  if(todayPl>0&&todayAc>=todayPl)earned.add('daily_100');
+  // surplus_1h
+  if(dailyRecs.some(r=>(r.surplusHours||0)>=1.0))earned.add('surplus_1h');
+  // weekly_80
+  const ws=weekStart();
+  const wDays=Array.from({length:7},(_,i)=>fmt(addDays(new Date(ws+'T00:00:00'),i)));
+  let wP=0,wA=0;
+  wDays.filter(dd=>dd<=today).forEach(dd=>{
+    const dow=new Date(dd+'T00:00:00').getDay();
+    wP+=schedules.filter(sc=>sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0).reduce((a,sc)=>a+sc.targetHours,0);
+    wA+=dailyRecs.filter(r=>r.date===dd).reduce((a,r)=>a+(r.actualHours||0),0);
+  });
+  if(wP>0&&wA/wP>=0.8)earned.add('weekly_80');
+  // comeback: 3日以上空いた後に記録
+  const actDates=dailyRecs.filter(r=>(r.actualHours||0)>0).map(r=>r.date).sort();
+  for(let i=1;i<actDates.length;i++){
+    const gap=Math.round((new Date(actDates[i]+'T00:00:00')-new Date(actDates[i-1]+'T00:00:00'))/86400000);
+    if(gap>=3){earned.add('comeback');break;}
+  }
+  // research_started
+  const resS=subjects.filter(s=>s.name&&(s.name.includes('研究')||s.name.includes('論文')));
+  if(resS.some(s=>dailyRecs.some(r=>r.subjectId===s.id&&(r.actualHours||0)>0)))earned.add('research_started');
+  return BADGE_DEFS.map(b=>({...b,earned:earned.has(b.id)}));
+}
+
+function generateWeeklyQuests(subjects,schedules,dailyRecs){
+  const today=todayStr();
+  const ws=weekStart();
+  const wDays=Array.from({length:7},(_,i)=>fmt(addDays(new Date(ws+'T00:00:00'),i)));
+  const quests=[];
+  const subjWeek=subjects.map(s=>{
+    let weekTotal=0,sofar=0;
+    wDays.forEach(dd=>{
+      const dow=new Date(dd+'T00:00:00').getDay();
+      const sc=schedules.find(sc2=>sc2.subjectId===s.id&&sc2.dayOfWeek===dow&&sc2.enabled&&sc2.targetHours>0);
+      if(sc){weekTotal+=sc.targetHours;if(dd<=today)sofar+=sc.targetHours;}
+    });
+    const actual=dailyRecs.filter(r=>r.subjectId===s.id&&wDays.includes(r.date)).reduce((a,r)=>a+(r.actualHours||0),0);
+    const days=new Set(dailyRecs.filter(r=>r.subjectId===s.id&&wDays.includes(r.date)&&(r.actualHours||0)>0).map(r=>r.date)).size;
+    const pct=sofar>0?actual/sofar*100:null;
+    return{...s,weekTotal:r2(weekTotal),sofar:r2(sofar),actual:r2(actual),days,pct};
+  }).filter(s=>s.weekTotal>0);
+  // Q1: 今週ペース最低科目 → subject_hours
+  const lowPace=[...subjWeek].sort((a,b)=>(a.pct??200)-(b.pct??200));
+  if(lowPace.length>0){
+    const s=lowPace[0];
+    const target=s.weekTotal,current=r2(s.actual);
+    if(current<target)quests.push({id:`qh_${s.id}`,type:'subject_hours',subjectId:s.id,color:s.color,
+      title:`${s.name}を今週${target}h学習する`,targetValue:target,currentValue:current,unit:'h',completed:false});
+  }
+  // Q2: 直近3日未記録科目 → subject_days
+  if(quests.length<3){
+    const miss=subjects.filter(s=>{
+      let c=0;
+      for(let i=1;i<=3;i++){
+        const dd=fmt(addDays(getToday(),-i));
+        const dow=new Date(dd+'T00:00:00').getDay();
+        if(!schedules.some(sc=>sc.subjectId===s.id&&sc.dayOfWeek===dow&&sc.enabled&&sc.targetHours>0))continue;
+        const rec=dailyRecs.find(r=>r.subjectId===s.id&&r.date===dd);
+        if(!rec||(rec.actualHours||0)===0)c++;
+      }
+      return c>=2;
+    }).filter(s=>!quests.some(q=>q.subjectId===s.id));
+    if(miss.length>0){
+      const s=miss[0];
+      const sw=subjWeek.find(x=>x.id===s.id)||{days:0,color:s.color};
+      const target=3,current=sw.days||0;
+      if(current<target)quests.push({id:`qd_${s.id}`,type:'subject_days',subjectId:s.id,color:sw.color||BRAND,
+        title:`${s.name}を今週${target}日記録する`,targetValue:target,currentValue:current,unit:'日',completed:false});
+    }
+  }
+  // Q3: consistency
+  if(quests.length<3){
+    const studyDays=new Set(dailyRecs.filter(r=>wDays.includes(r.date)&&(r.actualHours||0)>0).map(r=>r.date)).size;
+    const target=5;
+    if(studyDays<target)quests.push({id:'q_cons',type:'consistency',subjectId:null,color:BRAND,
+      title:`今週${target}日以上学習する`,targetValue:target,currentValue:studyDays,unit:'日',completed:false});
+  }
+  // Q4: recovery
+  if(quests.length<3){
+    const behind=lowPace.filter(s=>s.pct!==null&&s.pct<80&&!quests.some(q=>q.subjectId===s.id));
+    if(behind.length>0){
+      const s=behind[0];
+      const t80=r2(s.weekTotal*0.8),current=r2(s.actual);
+      if(current<t80)quests.push({id:`qr_${s.id}`,type:'recovery',subjectId:s.id,color:s.color,
+        title:`${s.name}の達成率を80%以上に戻す`,targetValue:t80,currentValue:current,unit:'h',completed:false});
+    }
+  }
+  return quests.slice(0,3).map(q=>({...q,completed:q.currentValue>=q.targetValue}));
+}
+
+const ROADMAP_PHASES=[
+  {id:'foundation',label:'基礎固め',minDays:90,msg:'今は基礎の抜けを減らす時期です。毎日の記録を安定させましょう。'},
+  {id:'practice',label:'演習強化',minDays:60,msg:'演習量を増やす時期です。苦手科目の未達を放置しないようにしましょう。'},
+  {id:'pastexam',label:'過去問集中',minDays:30,msg:'過去問演習を増やす時期です。主要科目の実績時間を優先しましょう。'},
+  {id:'final_adj',label:'直前調整',minDays:8,msg:'新しい範囲を広げすぎず、復習と弱点補強に集中しましょう。'},
+  {id:'final',label:'本番直前',minDays:0,msg:'学習量より、仕上げと体調管理を優先しましょう。'},
+];
+function getRoadmapPhase(remaining){
+  for(const p of ROADMAP_PHASES){if(remaining>=p.minDays)return p;}
+  return ROADMAP_PHASES[ROADMAP_PHASES.length-1];
+}
+
+function WeeklyQuestCard({subjects,schedules,dailyRecs}){
+  const quests=useMemo(()=>generateWeeklyQuests(subjects,schedules,dailyRecs),[subjects,schedules,dailyRecs]);
+  if(!quests.length)return null;
+  return(
+    <div style={{background:'#fff',borderRadius:14,padding:'14px 16px',border:'1px solid #e8ecf0',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+      <div style={{fontWeight:800,fontSize:13,color:'#1e293b',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+        <span style={{fontSize:15}}>🗺</span>今週のクエスト
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {quests.map(q=>{
+          const pct=q.targetValue>0?Math.min(100,Math.round(q.currentValue/q.targetValue*100)):0;
+          const left=r2(Math.max(0,q.targetValue-q.currentValue));
+          return(
+            <div key={q.id} style={{background:q.completed?'#f0fdf4':'#f8fafc',borderRadius:10,padding:'10px 12px',border:`1px solid ${q.completed?'#a7f3d0':'#e8ecf0'}`,borderLeft:`3px solid ${q.completed?'#10b981':q.color}`}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:5}}>
+                <span style={{fontSize:12,fontWeight:700,color:q.completed?'#059669':'#334155',flex:1,lineHeight:1.4}}>{q.completed?'✓ ':''}{q.title}</span>
+                {q.completed
+                  ?<span style={{fontSize:10,fontWeight:700,color:'#059669',background:'#dcfce7',border:'1px solid #a7f3d0',borderRadius:10,padding:'2px 8px',flexShrink:0,marginLeft:6}}>達成！</span>
+                  :<span style={{fontSize:10,color:'#64748b',flexShrink:0,marginLeft:6,whiteSpace:'nowrap'}}>あと{left}{q.unit}</span>}
+              </div>
+              <div style={{height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden',marginBottom:3}}>
+                <div style={{height:'100%',width:`${pct}%`,background:q.completed?'#10b981':q.color,borderRadius:3,transition:'width .5s'}}/>
+              </div>
+              <div style={{fontSize:10,color:'#94a3b8'}}>{q.currentValue}{q.unit} / {q.targetValue}{q.unit}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LevelDisplay({totalHours}){
+  const{lv,pct,toNext}=calcLevel(totalHours);
+  return(
+    <div style={{background:'rgba(255,255,255,.12)',borderRadius:10,padding:'9px 13px',marginTop:10}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+        <span style={{fontSize:13,fontWeight:800,color:'rgba(255,255,255,.95)',letterSpacing:.3}}>Lv.{lv}</span>
+        <span style={{fontSize:9,color:'rgba(255,255,255,.5)'}}>{toNext>0?`次のレベルまで ${toNext}h`:'最高レベル到達中'}</span>
+      </div>
+      <div style={{height:5,background:'rgba(255,255,255,.2)',borderRadius:3,overflow:'hidden'}}>
+        <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,#fbbf24,#f59e0b)',borderRadius:3,transition:'width .8s'}}/>
+      </div>
+    </div>
+  );
+}
+
+function BadgesSection({dailyRecs,subjects,schedules}){
+  const[showAll,setShowAll]=useState(false);
+  const badges=useMemo(()=>calcBadges(dailyRecs,subjects,schedules),[dailyRecs,subjects,schedules]);
+  const earned=badges.filter(b=>b.earned);
+  const unearned=badges.filter(b=>!b.earned);
+  return(
+    <div style={{background:'#fff',borderRadius:14,padding:'14px 16px',border:'1px solid #e8ecf0',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <span style={{fontWeight:800,fontSize:13,color:'#1e293b'}}>🏅 バッジ</span>
+        <span style={{fontSize:10,color:'#94a3b8'}}>{earned.length}/{badges.length} 獲得</span>
+      </div>
+      {earned.length===0&&(
+        <div style={{fontSize:12,color:'#94a3b8',textAlign:'center',padding:'8px 0'}}>学習を記録するとバッジを獲得できます</div>
+      )}
+      {earned.length>0&&(
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+          {(showAll?earned:earned.slice(-3).reverse()).map(b=>(
+            <div key={b.id} title={b.desc} style={{textAlign:'center',background:'#fef9ec',border:'1px solid #fde68a',borderRadius:10,padding:'8px 10px',minWidth:60}}>
+              <div style={{fontSize:20,marginBottom:2}}>{b.icon}</div>
+              <div style={{fontSize:9,fontWeight:700,color:'#92400e',lineHeight:1.3}}>{b.title}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <button onClick={()=>setShowAll(p=>!p)} style={{fontSize:11,color:BRAND,background:'none',border:`1px solid ${BRAND}30`,borderRadius:7,padding:'4px 10px',cursor:'pointer',fontWeight:600}}>
+        {showAll?'閉じる':'全バッジを見る'}
+      </button>
+      {showAll&&unearned.length>0&&(
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>
+          {unearned.map(b=>(
+            <div key={b.id} title={b.desc} style={{textAlign:'center',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10,padding:'8px 10px',minWidth:60,opacity:.5}}>
+              <div style={{fontSize:20,marginBottom:2,filter:'grayscale(1)'}}>{b.icon}</div>
+              <div style={{fontSize:9,fontWeight:600,color:'#94a3b8',lineHeight:1.3}}>{b.title}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoadmapCard({remaining}){
+  if(!remaining||remaining<0)return null;
+  const phase=getRoadmapPhase(remaining);
+  const phaseIdx=ROADMAP_PHASES.findIndex(p=>p.id===phase.id);
+  const nextPhase=phaseIdx>0?ROADMAP_PHASES[phaseIdx-1]:null;
+  const daysToNext=nextPhase?remaining-nextPhase.minDays:0;
+  return(
+    <div style={{background:'#fff',borderRadius:14,padding:'14px 16px',border:'1px solid #e8ecf0',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+      <div style={{fontWeight:800,fontSize:13,color:'#1e293b',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+        <span style={{fontSize:15}}>🗓</span>合格ロードマップ
+      </div>
+      <div style={{display:'flex',gap:3,marginBottom:12}}>
+        {[...ROADMAP_PHASES].reverse().map(p=>{
+          const isActive=p.id===phase.id;
+          return(
+            <div key={p.id} style={{flex:1,textAlign:'center'}}>
+              <div style={{height:5,background:isActive?BRAND:'#e2e8f0',borderRadius:3,marginBottom:4}}/>
+              <div style={{fontSize:8,color:isActive?BRAND:'#94a3b8',fontWeight:isActive?800:400,lineHeight:1.3}}>{p.label}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{background:BRAND_LIGHT,borderRadius:10,padding:'10px 12px',border:`1px solid ${BRAND}30`}}>
+        <div style={{fontSize:11,fontWeight:800,color:BRAND_DARK,marginBottom:2}}>現在地：{phase.label}フェーズ</div>
+        {nextPhase&&<div style={{fontSize:10,color:'#6366f1',marginBottom:4}}>次のフェーズ（{nextPhase.label}）まであと{daysToNext}日</div>}
+        <div style={{fontSize:11,color:'#475569',lineHeight:1.6}}>{phase.msg}</div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
   const today=todayStr();
   const todayDOW=getToday().getDay();
@@ -865,10 +1133,14 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
                   </div>
                 </div>
               </div>
+              <LevelDisplay totalHours={totalActual}/>
             </div>
           </Card>
         );
       })()}
+
+      {/* 週次クエスト */}
+      <WeeklyQuestCard subjects={subjects} schedules={schedules} dailyRecs={dailyRecs}/>
 
       {/* 今日の達成 */}
       <Card style={{padding:'16px 18px'}}>
@@ -953,6 +1225,8 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
             <Sec>科目別 今週のペース</Sec>
             <SubjectPaceChart subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} weekDays={weekDays} today={today}/>
           </Card>
+          <BadgesSection dailyRecs={dailyRecs} subjects={subjects} schedules={schedules}/>
+          <RoadmapCard remaining={remaining}/>
           <Card>
             <Sec>科目別 累計 / 未達</Sec>
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -2585,4 +2859,8 @@ function DemoApp(){
 }
 
 const App=IS_LIVE?SupabaseApp:DemoApp;
-const root=ReactDOM.createRoot(document.ge
+const root=ReactDOM.createRoot(document.getElementById('root'));
+root.render(<React.StrictMode><App/></React.StrictMode>);
+</script>
+</body>
+</html>
