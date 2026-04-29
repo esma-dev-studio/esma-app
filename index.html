@@ -1946,7 +1946,7 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
 }
 
 /* ─── 管理者ビュー ───────────────────────────────── */
-function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructorStudents,setInstructorStudents,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,currentUserId,allTasks,setAllTasks}){
+function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructorStudents,setInstructorStudents,allSubjects,setAllSubjects,allSchedules,setAllSchedules,allDailyRecs,instructorNotes,setInstructorNotes,currentUserId,allTasks,setAllTasks}){
   const[tab,setTab]=useState('students');
   const[selectedStudentId,setSelectedStudentId]=useState(null);
   const[addMode,setAddMode]=useState(null); // 'student'|'instructor'|'assign'
@@ -2423,7 +2423,7 @@ function SupabaseApp(){
   return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
-      <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS} allSubjects={adminAllSubjects} allSchedules={adminAllSchedules} allDailyRecs={adminAllDailyRecs} instructorNotes={adminInstructorNotes} setInstructorNotes={setAdminInstructorNotes} currentUserId={currentUserId} allTasks={adminAllTasks} setAllTasks={setAdminAllTasksDb}/>
+      <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS} allSubjects={adminAllSubjects} setAllSubjects={setAdminAllSubjects} allSchedules={adminAllSchedules} setAllSchedules={setAdminAllSchedules} allDailyRecs={adminAllDailyRecs} instructorNotes={adminInstructorNotes} setInstructorNotes={setAdminInstructorNotes} currentUserId={currentUserId} allTasks={adminAllTasks} setAllTasks={setAdminAllTasksDb}/>
     </div>
   );
 }
@@ -2585,8 +2585,4 @@ function DemoApp(){
 }
 
 const App=IS_LIVE?SupabaseApp:DemoApp;
-const root=ReactDOM.createRoot(document.getElementById('root'));
-root.render(<React.StrictMode><App/></React.StrictMode>);
-</script>
-</body>
-</html>
+const root=ReactDOM.createRoot(document.ge
