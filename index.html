@@ -816,7 +816,8 @@ function generateWeeklyQuests(subjects,schedules,dailyRecs){
   const today=todayStr();
   const ws=weekStart();
   const wDays=Array.from({length:7},(_,i)=>fmt(addDays(new Date(ws+'T00:00:00'),i)));
-  const quests=[];
+  const activeQuests=[];
+  const clearedQuests=[];
   const subjWeek=subjects.map(s=>{
     let weekTotal=0,sofar=0;
     wDays.forEach(dd=>{
@@ -829,16 +830,30 @@ function generateWeeklyQuests(subjects,schedules,dailyRecs){
     const pct=sofar>0?actual/sofar*100:null;
     return{...s,weekTotal:r2(weekTotal),sofar:r2(sofar),actual:r2(actual),days,pct};
   }).filter(s=>s.weekTotal>0);
-  // Q1: 今週ペース最低科目 → subject_hours
+  const studyDays=new Set(dailyRecs.filter(r=>wDays.includes(r.date)&&(r.actualHours||0)>0).map(r=>r.date)).size;
+
+  // ── クリア済み検出 ──
+  subjWeek.forEach(s=>{
+    const target=s.weekTotal,current=r2(s.actual);
+    if(current>=target&&target>0)
+      clearedQuests.push({id:`qh_${s.id}`,type:'subject_hours',subjectId:s.id,color:s.color,
+        title:`${s.name}を今週${target}h学習する`,targetValue:target,currentValue:current,unit:'h',completed:true});
+    if(s.days>=3)
+      clearedQuests.push({id:`qd_${s.id}`,type:'subject_days',subjectId:s.id,color:s.color,
+        title:`${s.name}を今週3日記録する`,targetValue:3,currentValue:s.days,unit:'日',completed:true});
+  });
+  if(studyDays>=5)
+    clearedQuests.push({id:'q_cons',type:'consistency',subjectId:null,color:BRAND,
+      title:'今週5日以上学習する',targetValue:5,currentValue:studyDays,unit:'日',completed:true});
+
+  // ── アクティブクエスト生成（未達のみ）──
   const lowPace=[...subjWeek].sort((a,b)=>(a.pct??200)-(b.pct??200));
   if(lowPace.length>0){
-    const s=lowPace[0];
-    const target=s.weekTotal,current=r2(s.actual);
-    if(current<target)quests.push({id:`qh_${s.id}`,type:'subject_hours',subjectId:s.id,color:s.color,
+    const s=lowPace[0];const target=s.weekTotal,current=r2(s.actual);
+    if(current<target)activeQuests.push({id:`qh_${s.id}`,type:'subject_hours',subjectId:s.id,color:s.color,
       title:`${s.name}を今週${target}h学習する`,targetValue:target,currentValue:current,unit:'h',completed:false});
   }
-  // Q2: 直近3日未記録科目 → subject_days
-  if(quests.length<3){
+  if(activeQuests.length<3){
     const miss=subjects.filter(s=>{
       let c=0;
       for(let i=1;i<=3;i++){
@@ -849,79 +864,90 @@ function generateWeeklyQuests(subjects,schedules,dailyRecs){
         if(!rec||(rec.actualHours||0)===0)c++;
       }
       return c>=2;
-    }).filter(s=>!quests.some(q=>q.subjectId===s.id));
+    }).filter(s=>!activeQuests.some(q=>q.subjectId===s.id)&&!clearedQuests.some(q=>q.subjectId===s.id&&q.type==='subject_days'));
     if(miss.length>0){
-      const s=miss[0];
-      const sw=subjWeek.find(x=>x.id===s.id)||{days:0,color:s.color};
+      const s=miss[0];const sw=subjWeek.find(x=>x.id===s.id)||{days:0,color:s.color};
       const target=3,current=sw.days||0;
-      if(current<target)quests.push({id:`qd_${s.id}`,type:'subject_days',subjectId:s.id,color:sw.color||BRAND,
+      if(current<target)activeQuests.push({id:`qd_${s.id}`,type:'subject_days',subjectId:s.id,color:sw.color||BRAND,
         title:`${s.name}を今週${target}日記録する`,targetValue:target,currentValue:current,unit:'日',completed:false});
     }
   }
-  // Q3: consistency
-  if(quests.length<3){
-    const studyDays=new Set(dailyRecs.filter(r=>wDays.includes(r.date)&&(r.actualHours||0)>0).map(r=>r.date)).size;
-    const target=5;
-    if(studyDays<target)quests.push({id:'q_cons',type:'consistency',subjectId:null,color:BRAND,
-      title:`今週${target}日以上学習する`,targetValue:target,currentValue:studyDays,unit:'日',completed:false});
-  }
-  // Q4: recovery
-  if(quests.length<3){
-    const behind=lowPace.filter(s=>s.pct!==null&&s.pct<80&&!quests.some(q=>q.subjectId===s.id));
+  if(activeQuests.length<3&&studyDays<5)
+    activeQuests.push({id:'q_cons',type:'consistency',subjectId:null,color:BRAND,
+      title:'今週5日以上学習する',targetValue:5,currentValue:studyDays,unit:'日',completed:false});
+  if(activeQuests.length<3){
+    const behind=lowPace.filter(s=>s.pct!==null&&s.pct<80&&!activeQuests.some(q=>q.subjectId===s.id));
     if(behind.length>0){
-      const s=behind[0];
-      const t80=r2(s.weekTotal*0.8),current=r2(s.actual);
-      if(current<t80)quests.push({id:`qr_${s.id}`,type:'recovery',subjectId:s.id,color:s.color,
+      const s=behind[0];const t80=r2(s.weekTotal*0.8),current=r2(s.actual);
+      if(current<t80)activeQuests.push({id:`qr_${s.id}`,type:'recovery',subjectId:s.id,color:s.color,
         title:`${s.name}の達成率を80%以上に戻す`,targetValue:t80,currentValue:current,unit:'h',completed:false});
     }
   }
-  return quests.slice(0,3).map(q=>({...q,completed:q.currentValue>=q.targetValue}));
+  return{active:activeQuests.slice(0,3),cleared:clearedQuests};
 }
-
-const ROADMAP_PHASES=[
-  {id:'foundation',label:'基礎固め',minDays:90,msg:'今は基礎の抜けを減らす時期です。毎日の記録を安定させましょう。'},
-  {id:'practice',label:'演習強化',minDays:60,msg:'演習量を増やす時期です。苦手科目の未達を放置しないようにしましょう。'},
-  {id:'pastexam',label:'過去問集中',minDays:30,msg:'過去問演習を増やす時期です。主要科目の実績時間を優先しましょう。'},
-  {id:'final_adj',label:'直前調整',minDays:8,msg:'新しい範囲を広げすぎず、復習と弱点補強に集中しましょう。'},
-  {id:'final',label:'本番直前',minDays:0,msg:'学習量より、仕上げと体調管理を優先しましょう。'},
-];
-function getRoadmapPhase(remaining){
-  for(const p of ROADMAP_PHASES){if(remaining>=p.minDays)return p;}
-  return ROADMAP_PHASES[ROADMAP_PHASES.length-1];
-}
-
 function WeeklyQuestCard({subjects,schedules,dailyRecs}){
-  const quests=useMemo(()=>generateWeeklyQuests(subjects,schedules,dailyRecs),[subjects,schedules,dailyRecs]);
-  if(!quests.length)return null;
+  const{active,cleared}=useMemo(()=>generateWeeklyQuests(subjects,schedules,dailyRecs),[subjects,schedules,dailyRecs]);
+  const[showCleared,setShowCleared]=useState(true);
+  if(!active.length&&!cleared.length)return null;
+  const QuestRow=({q})=>{
+    const pct=q.targetValue>0?Math.min(100,Math.round(q.currentValue/q.targetValue*100)):0;
+    const left=r2(Math.max(0,q.targetValue-q.currentValue));
+    return(
+      <div style={{background:'#f8fafc',borderRadius:10,padding:'10px 12px',border:'1px solid #e8ecf0',borderLeft:`3px solid ${q.color}`}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:5}}>
+          <span style={{fontSize:12,fontWeight:700,color:'#334155',flex:1,lineHeight:1.4}}>{q.title}</span>
+          <span style={{fontSize:10,color:'#64748b',flexShrink:0,marginLeft:6,whiteSpace:'nowrap'}}>あと{left}{q.unit}</span>
+        </div>
+        <div style={{height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden',marginBottom:3}}>
+          <div style={{height:'100%',width:`${pct}%`,background:q.color,borderRadius:3,transition:'width .5s'}}/>
+        </div>
+        <div style={{fontSize:10,color:'#94a3b8'}}>{q.currentValue}{q.unit} / {q.targetValue}{q.unit}</div>
+      </div>
+    );
+  };
   return(
     <div style={{background:'#fff',borderRadius:14,padding:'14px 16px',border:'1px solid #e8ecf0',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
       <div style={{fontWeight:800,fontSize:13,color:'#1e293b',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
         <span style={{fontSize:15}}>🗺</span>今週のクエスト
       </div>
-      <div style={{display:'flex',flexDirection:'column',gap:8}}>
-        {quests.map(q=>{
-          const pct=q.targetValue>0?Math.min(100,Math.round(q.currentValue/q.targetValue*100)):0;
-          const left=r2(Math.max(0,q.targetValue-q.currentValue));
-          return(
-            <div key={q.id} style={{background:q.completed?'#f0fdf4':'#f8fafc',borderRadius:10,padding:'10px 12px',border:`1px solid ${q.completed?'#a7f3d0':'#e8ecf0'}`,borderLeft:`3px solid ${q.completed?'#10b981':q.color}`}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:5}}>
-                <span style={{fontSize:12,fontWeight:700,color:q.completed?'#059669':'#334155',flex:1,lineHeight:1.4}}>{q.completed?'✓ ':''}{q.title}</span>
-                {q.completed
-                  ?<span style={{fontSize:10,fontWeight:700,color:'#059669',background:'#dcfce7',border:'1px solid #a7f3d0',borderRadius:10,padding:'2px 8px',flexShrink:0,marginLeft:6}}>達成！</span>
-                  :<span style={{fontSize:10,color:'#64748b',flexShrink:0,marginLeft:6,whiteSpace:'nowrap'}}>あと{left}{q.unit}</span>}
-              </div>
-              <div style={{height:5,background:'#e2e8f0',borderRadius:3,overflow:'hidden',marginBottom:3}}>
-                <div style={{height:'100%',width:`${pct}%`,background:q.completed?'#10b981':q.color,borderRadius:3,transition:'width .5s'}}/>
-              </div>
-              <div style={{fontSize:10,color:'#94a3b8'}}>{q.currentValue}{q.unit} / {q.targetValue}{q.unit}</div>
+      {active.length>0&&(
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:cleared.length>0?10:0}}>
+          {active.map(q=><QuestRow key={q.id} q={q}/>)}
+        </div>
+      )}
+      {cleared.length>0&&(
+        <div>
+          <button onClick={()=>setShowCleared(p=>!p)}
+            style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#f0fdf4',border:'1px solid #a7f3d0',borderRadius:8,padding:'7px 10px',cursor:'pointer',marginBottom:showCleared?8:0}}>
+            <span style={{fontSize:11,fontWeight:700,color:'#059669',display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:14}}>🏆</span>今週クリア済み（{cleared.length}件）
+            </span>
+            <span style={{fontSize:11,color:'#059669'}}>{showCleared?'▲':'▼'}</span>
+          </button>
+          {showCleared&&(
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {cleared.map(q=>(
+                <div key={q.id} style={{background:'#f0fdf4',borderRadius:10,padding:'9px 12px',border:'1px solid #a7f3d0',borderLeft:`3px solid #10b981`,display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:16,flexShrink:0}}>✅</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#059669',lineHeight:1.4}}>{q.title}</div>
+                    <div style={{fontSize:10,color:'#6ee7b7',marginTop:1}}>{q.currentValue}{q.unit} 達成！</div>
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,color:'#fff',background:'#10b981',borderRadius:8,padding:'2px 7px',flexShrink:0}}>達成</span>
+                </div>
+              ))}
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      )}
+      {active.length===0&&cleared.length>0&&(
+        <div style={{textAlign:'center',padding:'8px 0 2px',fontSize:12,color:'#059669',fontWeight:700}}>
+          🎉 今週のクエストをすべてクリアしました！
+        </div>
+      )}
     </div>
   );
 }
-
 function LevelDisplay({totalHours}){
   const{lv,pct,toNext}=calcLevel(totalHours);
   return(
