@@ -2529,18 +2529,19 @@ const IS_LIVE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const sb = IS_LIVE ? (window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) || null) : null;
 
 /* ─── DB同期セッター（楽観的更新 + Supabaseへ書き込み） ── */
-function makeDbSetter(localSetter, tableName) {
+function makeDbSetter(localSetter, tableName, sid) {
   return (updater) => {
     localSetter(prev => {
       const next = typeof updater === 'function' ? updater(Array.isArray(prev)?prev:[]) : updater;
       if (!sb || !Array.isArray(next)) return next;
+      const rows = sid ? next.map(x=>({...x,studentId:sid})) : next;
       const prevMap = new Map((prev||[]).map(x=>[x.id, JSON.stringify(x)]));
-      const nextMap = new Map(next.map(x=>[x.id, JSON.stringify(x)]));
+      const nextMap = new Map(rows.map(x=>[x.id, JSON.stringify(x)]));
       const toDelete = (prev||[]).filter(x=>!nextMap.has(x.id)).map(x=>x.id);
-      const toUpsert = next.filter(x=>!prevMap.has(x.id)||prevMap.get(x.id)!==nextMap.get(x.id));
+      const toUpsert = rows.filter(x=>!prevMap.has(x.id)||prevMap.get(x.id)!==nextMap.get(x.id));
       if(toDelete.length) sb.from(tableName).delete().in('id',toDelete).then(r=>{if(r.error){console.error('[DB delete]',r.error);window.dispatchEvent(new CustomEvent('esma-db-error',{detail:`⚠️ 削除に失敗しました（${r.error.message}）`}));}});
       if(toUpsert.length) sb.from(tableName).upsert(toUpsert).then(r=>{if(r.error){console.error('[DB upsert]',r.error);window.dispatchEvent(new CustomEvent('esma-db-error',{detail:`⚠️ 保存に失敗しました（${r.error.message}）`}));}});
-      return next;
+      return rows;
     });
   };
 }
@@ -2681,10 +2682,10 @@ function SupabaseApp(){
   const[adminAllTasks,setAdminAllTasksRaw]=useState([]);
 
   // DB同期セッター
-  const setSubjects      =useMemo(()=>makeDbSetter(setSubjectsRaw,     'subjects'),     []);
-  const setSchedules     =useMemo(()=>makeDbSetter(setSchedulesRaw,    'schedules'),    []);
-  const setDailyRecs     =useMemo(()=>makeDbSetter(setDailyRecsRaw,    'daily_records'),[]);
-  const setTasks         =useMemo(()=>makeDbSetter(setTasksRaw,        'tasks'),        []);
+  const setSubjects      =useMemo(()=>makeDbSetter(setSubjectsRaw,     'subjects',     currentStudentId),[currentStudentId]);
+  const setSchedules     =useMemo(()=>makeDbSetter(setSchedulesRaw,    'schedules',    currentStudentId),[currentStudentId]);
+  const setDailyRecs     =useMemo(()=>makeDbSetter(setDailyRecsRaw,    'daily_records',currentStudentId),[currentStudentId]);
+  const setTasks         =useMemo(()=>makeDbSetter(setTasksRaw,        'tasks',        currentStudentId),[currentStudentId]);
   const setInstructorNotes=useMemo(()=>makeDbSetter(setInstructorNotesRaw,'instructor_notes'),[]);
   const setAdminUsers    =useMemo(()=>makeDbSetter(setAdminUsersRaw,   'users'),        []);
   const setAdminProfiles =useMemo(()=>makeDbSetter(setAdminProfilesRaw,'student_profiles'),[]);
