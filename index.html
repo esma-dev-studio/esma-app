@@ -35,9 +35,9 @@ const DOW_LABELS=['日','月','火','水','木','金','土'];
 
 /* ─── 日付ユーティリティ ─────────────────────────── */
 const getToday  = ()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; };
-const fmt       = d=>(d instanceof Date?d:new Date(d+'T00:00:00')).toISOString().split('T')[0];
+const fmt       = d=>{ const dt=d instanceof Date?d:new Date(d+'T00:00:00'); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; };
 const addDays   = (d,n)=>{ const r=d instanceof Date?new Date(d):new Date(d+'T00:00:00'); r.setDate(r.getDate()+n); return r; };
-const todayStr  = ()=>fmt(getToday());
+const todayStr  = ()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const daysUntil = s=>Math.ceil((new Date(s+'T00:00:00')-getToday())/86400000);
 const weekStart = ()=>{ const d=getToday(); d.setDate(d.getDate()-d.getDay()); return fmt(d); };
 
@@ -255,7 +255,7 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
     );
   }
 
-  /* ── デフォルト：3ボタン ── */
+  /* ── デフォルト：3ボタン（スケジュールなし過去日は直接入力） ── */
   const btnBase={flex:1,padding:isMobile?'14px 4px':'13px 4px',borderRadius:10,border:'none',fontWeight:800,fontSize:isMobile?13:12,cursor:'pointer',lineHeight:1.3};
   return(
     <div style={{background:'#fff',borderRadius:14,border:'1px solid #e8ecf0',borderLeft:`4px solid ${subj.color}`,padding:'14px 16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
@@ -264,13 +264,19 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
           <div style={{width:10,height:10,borderRadius:'50%',background:subj.color,flexShrink:0}}/>
           <span style={{fontSize:14,fontWeight:700,color:'#0f172a'}}>{subj.name}</span>
         </div>
-        <span style={{fontSize:12,color:'#64748b',background:'#f8fafc',padding:'3px 10px',borderRadius:20,border:'1px solid #e8ecf0'}}>予定 {plannedH}h</span>
+        <span style={{fontSize:12,color:'#64748b',background:'#f8fafc',padding:'3px 10px',borderRadius:20,border:'1px solid #e8ecf0'}}>{plannedH>0?`予定 ${plannedH}h`:'予定外'}</span>
       </div>
+      {plannedH===0?(
+        <button onClick={()=>startMode('edit',1)} style={{...btnBase,flex:'none',width:'100%',background:BRAND,color:'#fff',padding:'12px'}}>
+          時間を入力して記録する
+        </button>
+      ):(
       <div style={{display:'flex',gap:8}}>
         <button onClick={()=>startMode('done',plannedH)} style={{...btnBase,background:'#10b981',color:'#fff'}}>✓<br/>できた</button>
         <button onClick={()=>startMode('partial',genPartialOpts(plannedH)[0])} style={{...btnBase,background:'#fffbeb',color:'#d97706',border:'1.5px solid #fde68a'}}>△<br/>少しやった</button>
         <button onClick={()=>doRecord(0)} style={{...btnBase,background:'#f8fafc',color:'#64748b',border:'1.5px solid #e2e8f0'}}>✗<br/>できなかった</button>
       </div>
+      )}
       <button onClick={()=>setShowDetail(p=>!p)} style={{marginTop:10,width:'100%',padding:'7px',borderRadius:8,border:'1px solid #e2e8f0',background:'transparent',color:'#94a3b8',fontSize:11,cursor:'pointer'}}>
         {showDetail?'▲ 詳細入力を閉じる':'詳しく記録する ▼'}
       </button>
@@ -290,20 +296,44 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
 /* ─── 今日の学習 ──────────────────────────────────── */
 function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
   const today=todayStr();
-  const todayDOW=getToday().getDay();
-  const todaySubjects=useMemo(()=>
-    schedules.filter(sc=>sc.dayOfWeek===todayDOW&&sc.enabled&&sc.targetHours>0)
+  const [selDate,setSelDate]=useState(today);
+  const isPast=selDate<today;
+  const isToday=selDate===today;
+  const diffDays=Math.round((new Date(today+'T00:00:00')-new Date(selDate+'T00:00:00'))/(86400000));
+
+  const goDay=useCallback(delta=>{
+    setSelDate(prev=>{
+      const d=new Date(prev+'T00:00:00');
+      d.setDate(d.getDate()+delta);
+      const next=fmt(d);
+      if(next>today) return prev;   // 未来は禁止
+      const nd=Math.round((new Date(today+'T00:00:00')-new Date(next+'T00:00:00'))/86400000);
+      if(nd>6) return prev;         // 7日前超は禁止
+      return next;
+    });
+  },[today]);
+
+  const selDOW=new Date(selDate+'T00:00:00').getDay();
+  const scheduledSubjects=useMemo(()=>
+    schedules.filter(sc=>sc.dayOfWeek===selDOW&&sc.enabled&&sc.targetHours>0)
       .map(sc=>({...subjects.find(s=>s.id===sc.subjectId),plannedH:sc.targetHours}))
       .filter(s=>s.id)
-  ,[schedules,subjects,todayDOW]);
-  const getRec=useCallback(sid=>dailyRecs.find(r=>r.subjectId===sid&&r.date===today),[dailyRecs,today]);
+  ,[schedules,subjects,selDOW]);
+  // 過去日でスケジュールがない場合は全科目を表示（予定0h）して記録可能にする
+  const selSubjects=useMemo(()=>{
+    if(scheduledSubjects.length>0) return scheduledSubjects;
+    if(selDate<today) return subjects.map(s=>({...s,plannedH:0}));
+    return scheduledSubjects;
+  },[scheduledSubjects,subjects,selDate,today]);
+
+  const getRec=useCallback(sid=>dailyRecs.find(r=>r.subjectId===sid&&r.date===selDate),[dailyRecs,selDate]);
   const handleRecord=useCallback((subj,data,now)=>{
     setDailyRecs(prev=>{
-      const idx=prev.findIndex(r=>r.subjectId===subj.id&&r.date===today);
+      const idx=prev.findIndex(r=>r.subjectId===subj.id&&r.date===selDate);
       const existing=idx>=0?prev[idx]:null;
       const rec={
-        id:existing?existing.id:`dr-${subj.id}-${today}-${Date.now()}`,
-        subjectId:subj.id,date:today,plannedHours:subj.plannedH,
+        id:existing?existing.id:`dr-${subj.id}-${selDate}-${Date.now()}`,
+        subjectId:subj.id,date:selDate,plannedHours:subj.plannedH,
         actualHours:data.actualHours,
         status:data.status||calcRecord(subj.plannedH,data.actualHours).status,
         unmetHours:data.unmetHours??0,surplusHours:data.surplusHours??0,
@@ -312,23 +342,45 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
       };
       return idx>=0?prev.map((r,i)=>i===idx?rec:r):[...prev,rec];
     });
-  },[today,setDailyRecs,studentId]);
+  },[selDate,setDailyRecs,studentId]);
 
-  const totalPlanned=useMemo(()=>todaySubjects.reduce((a,s)=>a+s.plannedH,0),[todaySubjects]);
-  const todayRecs=useMemo(()=>dailyRecs.filter(r=>r.date===today),[dailyRecs,today]);
-  const totalActual=useMemo(()=>todayRecs.reduce((a,r)=>a+r.actualHours,0),[todayRecs]);
-  const totalUnmet=useMemo(()=>todayRecs.reduce((a,r)=>a+(r.unmetHours||0),0),[todayRecs]);
-  const totalSurplus=useMemo(()=>todayRecs.reduce((a,r)=>a+(r.surplusHours||0),0),[todayRecs]);
+  const totalPlanned=useMemo(()=>selSubjects.reduce((a,s)=>a+s.plannedH,0),[selSubjects]);
+  const selRecs=useMemo(()=>dailyRecs.filter(r=>r.date===selDate),[dailyRecs,selDate]);
+  const totalActual=useMemo(()=>selRecs.reduce((a,r)=>a+r.actualHours,0),[selRecs]);
+  const totalUnmet=useMemo(()=>selRecs.reduce((a,r)=>a+(r.unmetHours||0),0),[selRecs]);
+  const totalSurplus=useMemo(()=>selRecs.reduce((a,r)=>a+(r.surplusHours||0),0),[selRecs]);
   const achPct=totalPlanned>0?Math.min(200,Math.round(totalActual/totalPlanned*100)):0;
-  const recordedCount=useMemo(()=>todaySubjects.filter(s=>getRec(s.id)).length,[todaySubjects,getRec]);
-  const unrecordedCount=todaySubjects.length-recordedCount;
+  const recordedCount=useMemo(()=>selSubjects.filter(s=>getRec(s.id)).length,[selSubjects,getRec]);
+  const unrecordedCount=selSubjects.length-recordedCount;
 
   return(
     <div style={{display:'flex',flexDirection:'column',gap:14}}>
-      <Card style={{background:BRAND_LIGHT,border:`1px solid ${BRAND}30`,padding:'16px 18px'}}>
-        <div style={{fontWeight:800,fontSize:15,color:BRAND_DARK,marginBottom:10}}>
-          📚 今日の学習 — {today}（{DOW_LABELS[todayDOW]}曜日）
+      {/* ── 日付ナビゲーター ── */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'#fff',border:'1px solid #e8ecf0',borderRadius:12,padding:'8px 12px'}}>
+        <button onClick={()=>goDay(-1)} disabled={diffDays>=6}
+          style={{background:'none',border:'none',cursor:diffDays>=6?'not-allowed':'pointer',fontSize:18,color:diffDays>=6?'#cbd5e1':BRAND,padding:'2px 8px',borderRadius:8,lineHeight:1}}>‹</button>
+        <div style={{textAlign:'center',flex:1}}>
+          {!isToday&&(
+            <div style={{fontSize:10,color:'#f59e0b',fontWeight:700,marginBottom:1}}>
+              {diffDays}日前の記録を編集中
+            </div>
+          )}
+          <div style={{fontWeight:800,fontSize:14,color:BRAND_DARK}}>
+            {isToday?'📚 今日':'📝 '}{selDate}（{DOW_LABELS[selDOW]}曜日）
+          </div>
         </div>
+        <button onClick={()=>goDay(1)} disabled={isToday}
+          style={{background:'none',border:'none',cursor:isToday?'not-allowed':'pointer',fontSize:18,color:isToday?'#cbd5e1':BRAND,padding:'2px 8px',borderRadius:8,lineHeight:1}}>›</button>
+      </div>
+      {!isToday&&(
+        <button onClick={()=>setSelDate(today)}
+          style={{background:BRAND,color:'#fff',border:'none',borderRadius:8,padding:'7px',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+          今日に戻る
+        </button>
+      )}
+
+      {/* ── サマリーカード ── */}
+      <Card style={{background:isPast?'#fafafa':BRAND_LIGHT,border:`1px solid ${isPast?'#e2e8f0':`${BRAND}30`}`,padding:'16px 18px'}}>
         {/* 予定/実績/達成率 */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:8}}>
           {[['予定',`${totalPlanned}h`,'#334155'],['実績',`${totalActual.toFixed(1)}h`,BRAND],['達成率',`${achPct}%`,achPct>=100?'#059669':achPct>=80?'#d97706':BRAND]].map(([l,v,c])=>(
@@ -355,13 +407,14 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
           </div>
         )}
       </Card>
-      {todaySubjects.length===0?(
+
+      {selSubjects.length===0?(
         <Card style={{textAlign:'center',padding:'40px 20px'}}>
           <div style={{fontSize:28,marginBottom:8}}>📅</div>
-          <div style={{fontWeight:700,fontSize:15,color:'#334155'}}>{DOW_LABELS[todayDOW]}曜日の学習予定はありません</div>
+          <div style={{fontWeight:700,fontSize:15,color:'#334155'}}>{DOW_LABELS[selDOW]}曜日の学習予定はありません</div>
           <div style={{fontSize:12,color:'#94a3b8',marginTop:6}}>設定タブで曜日別スケジュールを設定してください</div>
         </Card>
-      ):todaySubjects.map(subj=>(
+      ):selSubjects.map(subj=>(
         <SubjectDayCard key={subj.id} subj={subj} plannedH={subj.plannedH} record={getRec(subj.id)} onRecord={(data,now)=>handleRecord(subj,data,now)}/>
       ))}
     </div>
@@ -1980,6 +2033,7 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
   const[showForm,setShowForm]=useState(false);
   const[form,setForm]=useState({privateMemo:'',studentVisibleAction:'',nextMeetingDate:''});
   const[detailTab,setDetailTab]=useState('overview');
+  const[previewTab,setPreviewTab]=useState('dashboard');
 
   const last7=useMemo(()=>{
     const days=[];
@@ -2022,7 +2076,7 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
     setShowForm(false);
   };
   const toggleChecked=(id)=>onUpdateNotes(p=>p.map(n=>n.id===id?{...n,checked:!n.checked}:n));
-  const dtab=(id)=>({flex:1,padding:'8px 0',border:'none',borderBottom:`2px solid ${detailTab===id?BRAND:'transparent'}`,background:'transparent',color:detailTab===id?BRAND:'#64748b',fontWeight:detailTab===id?700:500,fontSize:11,cursor:'pointer'});
+  const dtab=(id)=>({flex:1,padding:'8px 4px',border:'none',borderBottom:`2px solid ${detailTab===id?BRAND:'transparent'}`,background:'transparent',color:detailTab===id?BRAND:'#64748b',fontWeight:detailTab===id?700:500,fontSize:10,cursor:'pointer',whiteSpace:'nowrap',textAlign:'center'});
 
   return(
     <div>
@@ -2052,11 +2106,12 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
       </div>
 
       {/* タブバー */}
-      <div style={{display:'flex',background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0 4px'}}>
+      <div style={{display:'flex',background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0 2px'}}>
         <button style={dtab('overview')} onClick={()=>setDetailTab('overview')}>概要</button>
         <button style={dtab('settings')} onClick={()=>setDetailTab('settings')}>科目・設定</button>
         <button style={dtab('tasks')} onClick={()=>setDetailTab('tasks')}>タスク</button>
         <button style={dtab('notes')} onClick={()=>setDetailTab('notes')}>メモ</button>
+        <button style={dtab('preview')} onClick={()=>setDetailTab('preview')}>👁 生徒画面</button>
       </div>
 
       {/* 概要タブ */}
@@ -2138,6 +2193,26 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
               </div>
             ))}
           </Card>
+        </div>
+      )}
+
+      {/* 生徒画面プレビュータブ */}
+      {detailTab==='preview'&&(
+        <div>
+          <div style={{background:'#fef3c7',borderBottom:'1px solid #fbbf24',padding:'7px 14px',display:'flex',alignItems:'center',gap:6,fontSize:11,fontWeight:700,color:'#92400e'}}>
+            <span>👁</span>
+            <span>{profile.name} さんの画面プレビュー（閲覧のみ・保存は無効）</span>
+          </div>
+          <div style={{display:'flex',background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0 4px'}}>
+            {[['dashboard','📊 ダッシュ'],['today','✍️ 今日の記録'],['plan','📋 学習計画']].map(([id,label])=>(
+              <button key={id} style={{flex:1,padding:'8px 0',border:'none',borderBottom:`2px solid ${previewTab===id?BRAND:'transparent'}`,background:'transparent',color:previewTab===id?BRAND:'#64748b',fontWeight:previewTab===id?700:500,fontSize:11,cursor:'pointer'}} onClick={()=>setPreviewTab(id)}>{label}</button>
+            ))}
+          </div>
+          <div style={{background:'#f8fafc',minHeight:300}}>
+            {previewTab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasksF} dailyRecs={dailyRecs} setTab={()=>{}}/>}
+            {previewTab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={()=>{}} studentId={profile.id}/>}
+            {previewTab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasksF} setTasks={()=>{}}/>}
+          </div>
         </div>
       )}
     </div>
@@ -2425,8 +2500,8 @@ function makeDbSetter(localSetter, tableName) {
       const nextMap = new Map(next.map(x=>[x.id, JSON.stringify(x)]));
       const toDelete = (prev||[]).filter(x=>!nextMap.has(x.id)).map(x=>x.id);
       const toUpsert = next.filter(x=>!prevMap.has(x.id)||prevMap.get(x.id)!==nextMap.get(x.id));
-      if(toDelete.length) sb.from(tableName).delete().in('id',toDelete).then(r=>r.error&&console.error('[DB delete]',r.error));
-      if(toUpsert.length) sb.from(tableName).upsert(toUpsert).then(r=>r.error&&console.error('[DB upsert]',r.error));
+      if(toDelete.length) sb.from(tableName).delete().in('id',toDelete).then(r=>{if(r.error){console.error('[DB delete]',r.error);window.dispatchEvent(new CustomEvent('esma-db-error',{detail:`⚠️ 削除に失敗しました（${r.error.message}）`}));}});
+      if(toUpsert.length) sb.from(tableName).upsert(toUpsert).then(r=>{if(r.error){console.error('[DB upsert]',r.error);window.dispatchEvent(new CustomEvent('esma-db-error',{detail:`⚠️ 保存に失敗しました（${r.error.message}）`}));}});
       return next;
     });
   };
@@ -2513,6 +2588,22 @@ function WaitingScreen({email,onLogout}){
 }
 
 /* ─── Supabase版メインアプリ ───────────────────────────── */
+/* ─── DB エラートースト ───────────────────────────────────── */
+function DbToast(){
+  const[msg,setMsg]=useState(null);
+  useEffect(()=>{
+    let timer;
+    const h=e=>{setMsg(e.detail);clearTimeout(timer);timer=setTimeout(()=>setMsg(null),5000);};
+    window.addEventListener('esma-db-error',h);
+    return()=>{window.removeEventListener('esma-db-error',h);clearTimeout(timer);};
+  },[]);
+  if(!msg)return null;
+  return(
+    <div style={{position:'fixed',bottom:80,left:'50%',transform:'translateX(-50%)',background:'#dc2626',color:'#fff',padding:'10px 18px',borderRadius:12,boxShadow:'0 4px 24px rgba(0,0,0,.25)',fontSize:13,fontWeight:600,zIndex:9999,maxWidth:360,textAlign:'center',whiteSpace:'pre-wrap',lineHeight:1.5,cursor:'pointer'}}
+      onClick={()=>setMsg(null)}>{msg}</div>
+  );
+}
+
 function SupabaseApp(){
   const[authUser,setAuthUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(true);
@@ -2678,6 +2769,7 @@ function SupabaseApp(){
     return(
       <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc',paddingBottom:68}}>
         {hdr}
+        <DbToast/>
         {!onboarded&&currentProfile&&<Onboarding subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} cfg={cfg} setCfg={setCfg} onComplete={handleOnboardingComplete}/>}
         {latestAction&&(
           <div style={{margin:'10px 14px 0',padding:'11px 14px',background:'#eef2ff',borderRadius:11,border:'1px solid #c7d2fe',display:'flex',gap:8,alignItems:'flex-start'}}>
@@ -2700,12 +2792,14 @@ function SupabaseApp(){
   if(currentRole==='instructor')return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
+      <DbToast/>
       <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb}/>
     </div>
   );
   return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
+      <DbToast/>
       <AdminView users={adminUsers} setUsers={setAdminUsers} studentProfiles={adminProfiles} setStudentProfiles={setAdminProfiles} instructorStudents={adminIS} setInstructorStudents={setAdminIS} allSubjects={adminAllSubjects} setAllSubjects={setAdminAllSubjects} allSchedules={adminAllSchedules} setAllSchedules={setAdminAllSchedules} allDailyRecs={adminAllDailyRecs} instructorNotes={adminInstructorNotes} setInstructorNotes={setAdminInstructorNotes} currentUserId={currentUserId} allTasks={adminAllTasks} setAllTasks={setAdminAllTasksDb}/>
     </div>
   );
@@ -2805,8 +2899,8 @@ function DemoApp(){
             </div>
           );
         })()}
-        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab}/>}
-        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studentId={currentStudentId}/>}
+        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs}/>}
+        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks}/>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
         <nav style={navStyle}>
@@ -2856,10 +2950,8 @@ function DemoApp(){
       </div>
       <AdminView
         users={users} setUsers={setUsers}
-        studentProfiles={studentProfiles} setStudentProfiles={setStudentProfiles}
         instructorStudents={instructorStudents} setInstructorStudents={setInstructorStudents}
-        allSubjects={allSubjects} setAllSubjects={setAdminAllSubjects}
-        allSchedules={allSchedules} setAllSchedules={setAdminAllSchedules}
+        allSubjects={allSubjects} allSchedules={allSchedules}
         allDailyRecs={allDailyRecs}
         instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes}
         currentUserId={currentUser?.id}
