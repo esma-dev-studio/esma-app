@@ -695,31 +695,40 @@ function calcLevel(totalH){
 }
 
 const BADGE_DEFS=[
-  {id:'first_record',title:'初回記録',desc:'初めて学習を記録',icon:'📝'},
-  {id:'streak_3',title:'3日継続',desc:'3日連続で学習',icon:'🔥'},
-  {id:'streak_7',title:'7日継続',desc:'7日連続で学習',icon:'⚡'},
-  {id:'daily_100',title:'予定達成',desc:'1日の達成率100%以上',icon:'✅'},
-  {id:'surplus_1h',title:'前倒し達成',desc:'1日1時間以上前倒し',icon:'🚀'},
-  {id:'weekly_80',title:'週間80%達成',desc:'今週の達成率80%以上',icon:'📈'},
-  {id:'comeback',title:'復帰達成',desc:'遅れから学習を再開',icon:'💪'},
-  {id:'research_started',title:'研究計画スタート',desc:'研究計画科目で初記録',icon:'🔬'},
+  {id:'first_record', title:'初回記録',    desc:'初めて学習を記録',          icon:'📝'},
+  {id:'streak_3',     title:'3日継続',     desc:'3日連続で学習',             icon:'🔥'},
+  {id:'streak_7',     title:'7日継続',     desc:'7日連続で学習',             icon:'⚡'},
+  {id:'streak_14',    title:'14日継続',    desc:'14日連続で学習',            icon:'🌟'},
+  {id:'streak_30',    title:'30日継続',    desc:'30日連続で学習',            icon:'👑'},
+  {id:'streak_60',    title:'60日継続',    desc:'60日連続で学習',            icon:'🏆'},
+  {id:'daily_100',    title:'予定達成',    desc:'1日の達成率100%以上',       icon:'✅'},
+  {id:'surplus_1h',   title:'前倒し達成',  desc:'1日1時間以上前倒し',        icon:'🚀'},
+  {id:'weekly_80',    title:'週間80%達成', desc:'今週の達成率80%以上',       icon:'📈'},
+  {id:'hours_10',     title:'10h達成',     desc:'累計学習10時間突破',        icon:'📚'},
+  {id:'hours_50',     title:'50h達成',     desc:'累計学習50時間突破',        icon:'💡'},
+  {id:'hours_100',    title:'100h達成',    desc:'累計学習100時間突破',       icon:'🎯'},
+  {id:'hours_200',    title:'200h達成',    desc:'累計学習200時間突破',       icon:'💎'},
+  {id:'hours_300',    title:'300h達成',    desc:'累計学習300時間突破',       icon:'🔑'},
+  {id:'hours_500',    title:'500h達成',    desc:'累計学習500時間突破',       icon:'🎓'},
 ];
 
 function calcBadges(dailyRecs,subjects,schedules){
   const earned=new Set();
-  const sorted=[...dailyRecs].sort((a,b)=>a.date.localeCompare(b.date));
-  if(sorted.length>0)earned.add('first_record');
-  // 連続学習日数
+  if(dailyRecs.length>0)earned.add('first_record');
+  // 連続学習日数（今日から遡る最長連続）
   let streak=0;
   let sd=getToday();
-  for(let i=0;i<60;i++){
+  for(let i=0;i<90;i++){
     const ds=fmt(sd);
     if(dailyRecs.some(r=>r.date===ds&&(r.actualHours||0)>0))streak++;
     else break;
     sd=addDays(sd,-1);
   }
-  if(streak>=3)earned.add('streak_3');
-  if(streak>=7)earned.add('streak_7');
+  if(streak>=3) earned.add('streak_3');
+  if(streak>=7) earned.add('streak_7');
+  if(streak>=14)earned.add('streak_14');
+  if(streak>=30)earned.add('streak_30');
+  if(streak>=60)earned.add('streak_60');
   // daily_100
   const today=todayStr();
   const todayDOW=getToday().getDay();
@@ -738,15 +747,14 @@ function calcBadges(dailyRecs,subjects,schedules){
     wA+=dailyRecs.filter(r=>r.date===dd).reduce((a,r)=>a+(r.actualHours||0),0);
   });
   if(wP>0&&wA/wP>=0.8)earned.add('weekly_80');
-  // comeback: 3日以上空いた後に記録
-  const actDates=dailyRecs.filter(r=>(r.actualHours||0)>0).map(r=>r.date).sort();
-  for(let i=1;i<actDates.length;i++){
-    const gap=Math.round((new Date(actDates[i]+'T00:00:00')-new Date(actDates[i-1]+'T00:00:00'))/86400000);
-    if(gap>=3){earned.add('comeback');break;}
-  }
-  // research_started
-  const resS=subjects.filter(s=>s.name&&(s.name.includes('研究')||s.name.includes('論文')));
-  if(resS.some(s=>dailyRecs.some(r=>r.subjectId===s.id&&(r.actualHours||0)>0)))earned.add('research_started');
+  // 累計時間バッジ
+  const totalH=dailyRecs.reduce((a,r)=>a+(r.actualHours||0),0);
+  if(totalH>=10) earned.add('hours_10');
+  if(totalH>=50) earned.add('hours_50');
+  if(totalH>=100)earned.add('hours_100');
+  if(totalH>=200)earned.add('hours_200');
+  if(totalH>=300)earned.add('hours_300');
+  if(totalH>=500)earned.add('hours_500');
   return BADGE_DEFS.map(b=>({...b,earned:earned.has(b.id)}));
 }
 
@@ -2847,8 +2855,10 @@ function DemoApp(){
       </div>
       <AdminView
         users={users} setUsers={setUsers}
+        studentProfiles={studentProfiles} setStudentProfiles={setStudentProfiles}
         instructorStudents={instructorStudents} setInstructorStudents={setInstructorStudents}
-        allSubjects={allSubjects} allSchedules={allSchedules}
+        allSubjects={allSubjects} setAllSubjects={setAdminAllSubjects}
+        allSchedules={allSchedules} setAllSchedules={setAdminAllSchedules}
         allDailyRecs={allDailyRecs}
         instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes}
         currentUserId={currentUser?.id}
