@@ -2680,7 +2680,7 @@ function SupabaseApp(){
             </div>
           </div>
         )}
-        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs}/>}
+        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab}/>}
         {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks}/>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
@@ -2796,7 +2796,7 @@ function DemoApp(){
             </div>
           );
         })()}
-        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs}/>}
+        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab}/>}
         {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks}/>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
