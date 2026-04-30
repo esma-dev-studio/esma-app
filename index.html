@@ -2473,7 +2473,7 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
       allTasks={allTasks||[]}
       setAllTasks={setAllTasks}
       setStudentProfiles={setStudentProfiles}
-      studyDetails={(allStudyDetails||[]).filter(d=>d.studentId===selectedId)}
+      studyDetails={(allStudyDetails||[]).filter(d=>d.studentId===selectedStudentId)}
     />;
   }
   const instructors=users.filter(u=>u.role==='instructor');
@@ -2872,7 +2872,7 @@ function SupabaseApp(){
         setAllTasksInstRaw(ta.data||[]);setInstructorNotesRaw(no.data||[]);
         setAllStudyDetailsInstRaw(isrd.data||[]);
       }else{
-        const[us,pr,is,su,sc,dr,no,ta]=await Promise.all([
+        const[us,pr,is,su,sc,dr,no,ta,srd2]=await Promise.all([
           sb.from('users').select('*'),
           sb.from('student_profiles').select('*'),
           sb.from('instructor_students').select('*'),
@@ -2881,11 +2881,12 @@ function SupabaseApp(){
           sb.from('daily_records').select('*'),
           sb.from('instructor_notes').select('*'),
           sb.from('tasks').select('*'),
+          sb.from('study_record_details').select('*'),
         ]);
         setAdminUsersRaw(us.data||[]);setAdminProfilesRaw(pr.data||[]);setAdminISRaw(is.data||[]);
         setAdminAllSubjectsRaw(su.data||[]);setAdminAllSchedulesRaw(sc.data||[]);
         setAdminAllDailyRecsRaw(dr.data||[]);setAdminInstructorNotesRaw(no.data||[]);
-        setAdminAllTasksRaw(ta.data||[]);
+        setAdminAllTasksRaw(ta.data||[]);setAllStudyDetailsInstRaw(srd2.data||[]);
       }
     }catch(e){setDataErr(e.message);}
     finally{setDataLoading(false);}
@@ -2938,6 +2939,7 @@ function SupabaseApp(){
         {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab} studyDetails={studyDetails}/>}
         {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studentId={currentStudentId} studyDetails={studyDetails} setStudyDetails={setStudyDetails}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks} studentId={currentStudentId}/>}
+        {tab==='review'&&<div style={{padding:'14px 12px'}}><StudyLogReview subjects={subjects} studyDetails={studyDetails||[]} dailyRecs={dailyRecs}/></div>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
         <nav style={navSt}>{STUDENT_TABS.map(t=><button key={t.id} style={nb(tab===t.id)} onClick={()=>setTab(t.id)}><span style={{fontSize:18}}>{t.icon}</span><span style={{fontSize:9,fontWeight:tab===t.id?800:500}}>{t.label}</span></button>)}</nav>
       </div>
@@ -2963,6 +2965,7 @@ const STUDENT_TABS=[
   {id:'dashboard',label:'ダッシュ',icon:'📊'},
   {id:'today',    label:'今日の記録',icon:'✍️'},
   {id:'plan',     label:'学習計画',icon:'📋'},
+  {id:'review',   label:'振り返り',icon:'📖'},
   {id:'settings', label:'設定',icon:'⚙️'},
 ];
 
@@ -3059,6 +3062,7 @@ function DemoApp(){
         {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab} studyDetails={studyDetails}/>}
         {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studyDetails={studyDetails} setStudyDetails={setStudyDetails}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks} studentId={currentStudentId}/>}
+        {tab==='review'&&<div style={{padding:'14px 12px'}}><StudyLogReview subjects={subjects} studyDetails={studyDetails||[]} dailyRecs={dailyRecs}/></div>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
         <nav style={navStyle}>
           {STUDENT_TABS.map(t=>(
