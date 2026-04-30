@@ -45,8 +45,30 @@ const weekStart = ()=>{ const d=getToday(); d.setDate(d.getDate()-d.getDay()); r
 const INIT_CFG={
   targetGraduateSchool:'○○大学大学院',department:'情報工学専攻',
   examDate:'2026-08-20',startDate:new Date().toISOString().split('T')[0],
-  weekdayStudyHours:3,weekendStudyHours:6,weeklyTargetHours:21,totalHoursGoal:500
+  weekdayStudyHours:3,weekendStudyHours:6,weeklyTargetHours:21,totalHoursGoal:500,
+  targetGraduateSchools:[]
 };
+
+/* ─── 志望大学院ヘルパー ─────────────────────────── */
+function getPrimaryTarget(p){
+  const s=p?.targetGraduateSchools;
+  if(Array.isArray(s)&&s.length>0) return s.find(x=>x.priority===1)||s[0];
+  return{schoolName:p?.targetGraduateSchool||'',department:p?.department||'',examDate:p?.examDate||'',priority:1,id:'legacy'};
+}
+function getTargetSchools(p){
+  const s=p?.targetGraduateSchools;
+  if(Array.isArray(s)&&s.length>0) return s;
+  const pt=getPrimaryTarget(p);
+  if(pt.schoolName) return[{...pt,id:'legacy',priority:1,memo:'第1志望'}];
+  return[];
+}
+function migrateTargetSchools(p){
+  if(Array.isArray(p?.targetGraduateSchools)&&p.targetGraduateSchools.length>0) return p.targetGraduateSchools;
+  if(p?.targetGraduateSchool||p?.examDate){
+    return[{id:'g1',priority:1,schoolName:p.targetGraduateSchool||'',department:p.department||'',examDate:p.examDate||'',memo:'第1志望'}];
+  }
+  return[];
+}
 const INIT_SUBJECTS=[
   {id:'s1',name:'数学',    importance:5,currentLevel:3,targetLevel:5,color:'#6366f1'},
   {id:'s2',name:'英語',    importance:4,currentLevel:3,targetLevel:4,color:'#10b981'},
@@ -1140,7 +1162,9 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab,studyDetails}){
   const today=todayStr();
   const todayDOW=getToday().getDay();
   const isMobile=useIsMobile();
-  const remaining=daysUntil(cfg.examDate);
+  const primaryTarget=getPrimaryTarget(cfg);
+  const subTargets=getTargetSchools(cfg).filter(s=>s.priority!==1);
+  const remaining=daysUntil(primaryTarget.examDate||cfg.examDate||'');
   const ws=weekStart();
   const[showMore,setShowMore]=useState(false);
 
@@ -1288,8 +1312,20 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab,studyDetails}){
             <div style={{padding:'22px 22px 20px',position:'relative',zIndex:1}}>
               <div style={{marginBottom:16}}>
                 <div style={{fontSize:10,color:'rgba(255,255,255,.5)',letterSpacing:1.2,marginBottom:5}}>🎯 目標</div>
-                <div style={{fontSize:isMobile?20:24,fontWeight:900,color:'#fff',lineHeight:1.2,textShadow:'0 2px 12px rgba(0,0,0,.3)'}}>{cfg.targetGraduateSchool}</div>
-                <div style={{fontSize:14,fontWeight:700,color:'rgba(255,255,255,.75)',marginTop:3}}>{cfg.department}</div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,.45)',letterSpacing:1,marginBottom:2}}>第1志望</div>
+                <div style={{fontSize:isMobile?20:24,fontWeight:900,color:'#fff',lineHeight:1.2,textShadow:'0 2px 12px rgba(0,0,0,.3)'}}>{primaryTarget.schoolName||cfg.targetGraduateSchool}</div>
+                <div style={{fontSize:14,fontWeight:700,color:'rgba(255,255,255,.75)',marginTop:3}}>{primaryTarget.department||cfg.department}</div>
+                {subTargets.length>0&&(
+                  <div style={{marginTop:8,display:'flex',flexWrap:'wrap',gap:5}}>
+                    {subTargets.map(s=>(
+                      <div key={s.id} style={{background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.15)',borderRadius:8,padding:'3px 9px',display:'flex',alignItems:'center',gap:5}}>
+                        <span style={{fontSize:9,color:'rgba(255,255,255,.5)',flexShrink:0}}>第{s.priority}志望</span>
+                        <span style={{fontSize:10,color:'rgba(255,255,255,.75)',fontWeight:600}}>{s.schoolName}</span>
+                        {s.examDate&&<span style={{fontSize:9,color:'rgba(255,255,255,.45)'}}>あと{Math.max(0,daysUntil(s.examDate))}日</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div style={{display:'flex',gap:10,alignItems:'stretch',flexWrap:'wrap'}}>
                 <div style={{flex:'0 0 auto',background:'rgba(255,255,255,.12)',borderRadius:12,padding:'13px 18px'}}>
@@ -1298,7 +1334,7 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab,studyDetails}){
                     <span style={{fontSize:isMobile?44:52,fontWeight:900,color:'#fff',lineHeight:1,letterSpacing:-2}}>{remaining}</span>
                     <span style={{fontSize:16,fontWeight:700,color:'rgba(255,255,255,.8)'}}>日</span>
                   </div>
-                  <div style={{fontSize:9,color:'rgba(255,255,255,.4)',marginTop:2}}>{cfg.examDate}</div>
+                  <div style={{fontSize:9,color:'rgba(255,255,255,.4)',marginTop:2}}>{primaryTarget.examDate||cfg.examDate}</div>
                 </div>
                 <div style={{flex:1,minWidth:140,background:'rgba(255,255,255,.12)',borderRadius:12,padding:'13px 16px',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
@@ -1500,7 +1536,7 @@ function PlanView({cfg,subjects,schedules,tasks,setTasks,studentId:planStudentId
   const[editId,setEditId]=useState(null);
   const today=todayStr();
   const dates=useMemo(()=>{
-    const exam=cfg?.examDate;
+    const exam=getPrimaryTarget(cfg)?.examDate||cfg?.examDate;
     let end;
     if(exam){const e=new Date(exam+'T00:00:00');end=fmt(new Date(e.getFullYear(),e.getMonth()+1,0));}
     else{end=fmt(addDays(getToday(),89));}
@@ -1638,11 +1674,104 @@ function PlanView({cfg,subjects,schedules,tasks,setTasks,studentId:planStudentId
   );
 }
 
+
+/* ─── 志望大学院設定セクション ──────────────────── */
+function TargetSchoolsSection({cfg,setCfg}){
+  const schools=useMemo(()=>migrateTargetSchools(cfg),[cfg?.targetGraduateSchools,cfg?.targetGraduateSchool]);
+  const[editIdx,setEditIdx]=useState(null);
+  const[editData,setEditData]=useState({});
+  const[addMode,setAddMode]=useState(false);
+  const[newData,setNewData]=useState({schoolName:'',department:'',examDate:'',memo:''});
+  const fStyle={width:'100%',padding:'9px 11px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13,marginBottom:8,boxSizing:'border-box'};
+  const saveSchools=(updated)=>{
+    const renumbered=updated.map((s,i)=>({...s,priority:i+1}));
+    setCfg(prev=>({...prev,targetGraduateSchools:renumbered,
+      targetGraduateSchool:renumbered[0]?.schoolName||prev.targetGraduateSchool||'',
+      department:renumbered[0]?.department||prev.department||'',
+      examDate:renumbered[0]?.examDate||prev.examDate||''
+    }));
+  };
+  const handleAdd=()=>{
+    if(!newData.schoolName.trim())return;
+    saveSchools([...schools,{id:`g${Date.now()}`,...newData}]);
+    setNewData({schoolName:'',department:'',examDate:'',memo:''});setAddMode(false);
+  };
+  const handleSaveEdit=(idx)=>{
+    const updated=[...schools];updated[idx]={...updated[idx],...editData};
+    saveSchools(updated);setEditIdx(null);
+  };
+  const handleDelete=(idx)=>{
+    if(!confirm('この志望校を削除しますか？'))return;
+    saveSchools(schools.filter((_,i)=>i!==idx));
+  };
+  const handleSetPrimary=(idx)=>{
+    const updated=[...schools];const[picked]=updated.splice(idx,1);
+    saveSchools([picked,...updated]);
+  };
+  const PL=['第1志望','第2志望','第3志望'];
+  const PC=['#6366f1','#10b981','#f59e0b'];
+  return(
+    <div>
+      <div style={{display:'flex',flexDirection:'column',gap:9,marginBottom:10}}>
+        {schools.map((s,idx)=>(
+          <div key={s.id||idx}>
+            {editIdx!==idx?(
+              <div style={{borderRadius:12,border:`1.5px solid ${PC[idx]||'#e2e8f0'}33`,background:'#f8fafc',padding:'11px 13px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:5}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontSize:10,fontWeight:800,color:'#fff',background:PC[idx]||BRAND,padding:'2px 8px',borderRadius:8}}>{PL[idx]||`第${idx+1}志望`}</span>
+                    {s.examDate&&<span style={{fontSize:10,color:'#64748b'}}>あと{Math.max(0,daysUntil(s.examDate))}日</span>}
+                  </div>
+                  <div style={{display:'flex',gap:4}}>
+                    {idx>0&&<button onClick={()=>handleSetPrimary(idx)} style={{padding:'3px 8px',fontSize:10,borderRadius:6,border:`1px solid ${PC[0]}`,background:'#eef2ff',color:PC[0],cursor:'pointer'}}>↑第1志望に</button>}
+                    <button onClick={()=>{setEditIdx(idx);setEditData({...s});}} style={{padding:'3px 8px',fontSize:10,borderRadius:6,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',cursor:'pointer'}}>編集</button>
+                    {schools.length>1&&<button onClick={()=>handleDelete(idx)} style={{padding:'3px 8px',fontSize:10,borderRadius:6,border:'1px solid #fecaca',background:'#fff1f2',color:'#dc2626',cursor:'pointer'}}>削除</button>}
+                  </div>
+                </div>
+                <div style={{fontSize:14,fontWeight:800,color:'#1e293b'}}>{s.schoolName||'（未設定）'}</div>
+                {s.department&&<div style={{fontSize:12,color:'#64748b',marginTop:2}}>{s.department}</div>}
+                {s.examDate&&<div style={{fontSize:11,color:'#94a3b8',marginTop:2}}>試験日：{s.examDate}</div>}
+                {s.memo&&<div style={{fontSize:11,color:'#94a3b8',marginTop:2}}>メモ：{s.memo}</div>}
+              </div>
+            ):(
+              <div style={{borderRadius:12,border:`1.5px solid ${BRAND}`,background:'#eef2ff',padding:'12px 14px'}}>
+                <div style={{fontSize:12,fontWeight:800,color:BRAND,marginBottom:10}}>✏️ {PL[idx]||`第${idx+1}志望`}を編集</div>
+                <input type="text" placeholder="大学院名（例：東京大学大学院）" value={editData.schoolName||''} onChange={e=>setEditData(p=>({...p,schoolName:e.target.value}))} style={fStyle}/>
+                <input type="text" placeholder="研究科・専攻（例：情報理工学系研究科）" value={editData.department||''} onChange={e=>setEditData(p=>({...p,department:e.target.value}))} style={fStyle}/>
+                <label style={{fontSize:11,color:'#64748b',display:'block',marginBottom:4}}>試験日</label>
+                <input type="date" value={editData.examDate||''} onChange={e=>setEditData(p=>({...p,examDate:e.target.value}))} style={{...fStyle,marginBottom:8}}/>
+                <input type="text" placeholder="メモ（例：併願）" value={editData.memo||''} onChange={e=>setEditData(p=>({...p,memo:e.target.value}))} style={fStyle}/>
+                <div style={{display:'flex',gap:8,marginTop:4}}>
+                  <button onClick={()=>handleSaveEdit(idx)} style={{flex:1,padding:'9px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>保存</button>
+                  <button onClick={()=>setEditIdx(null)} style={{flex:1,padding:'9px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>キャンセル</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {schools.length<3&&!addMode&&(
+        <button onClick={()=>setAddMode(true)} style={{width:'100%',padding:'10px',borderRadius:10,border:`1.5px dashed ${BRAND}`,background:'#eef2ff',color:BRAND,fontWeight:700,fontSize:13,cursor:'pointer'}}>＋ 志望校を追加（{schools.length}/3）</button>
+      )}
+      {addMode&&(
+        <div style={{borderRadius:12,border:`1.5px solid ${BRAND}`,background:'#eef2ff',padding:'12px 14px'}}>
+          <div style={{fontSize:12,fontWeight:800,color:BRAND,marginBottom:10}}>➕ {PL[schools.length]||`第${schools.length+1}志望`}を追加</div>
+          <input type="text" placeholder="大学院名（例：東京大学大学院）" value={newData.schoolName} onChange={e=>setNewData(p=>({...p,schoolName:e.target.value}))} style={fStyle}/>
+          <input type="text" placeholder="研究科・専攻" value={newData.department} onChange={e=>setNewData(p=>({...p,department:e.target.value}))} style={fStyle}/>
+          <label style={{fontSize:11,color:'#64748b',display:'block',marginBottom:4}}>試験日</label>
+          <input type="date" value={newData.examDate} onChange={e=>setNewData(p=>({...p,examDate:e.target.value}))} style={{...fStyle,marginBottom:8}}/>
+          <input type="text" placeholder="メモ（任意）" value={newData.memo} onChange={e=>setNewData(p=>({...p,memo:e.target.value}))} style={fStyle}/>
+          <div style={{display:'flex',gap:8,marginTop:4}}>
+            <button onClick={handleAdd} style={{flex:1,padding:'9px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>追加する</button>
+            <button onClick={()=>{setAddMode(false);setNewData({schoolName:'',department:'',examDate:'',memo:'​'});}} style={{flex:1,padding:'9px',borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:13,cursor:'pointer'}}>キャンセル</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 /* ─── 設定 ──────────────────────────────────────── */
 const CFG_FIELDS=[
-  {label:'志望大学院',key:'targetGraduateSchool',type:'text'},
-  {label:'専攻',key:'department',type:'text'},
-  {label:'試験日',key:'examDate',type:'date'},
   {label:'学習開始日（記録の起算日）',key:'startDate',type:'date'},
   {label:'平日の学習可能時間（h）',key:'weekdayStudyHours',type:'number'},
   {label:'休日の学習可能時間（h）',key:'weekendStudyHours',type:'number'},
@@ -1687,6 +1816,11 @@ function SettingsView({cfg,setCfg,subjects,setSubjects,schedules,setSchedules,da
   return(
     <div style={{display:'flex',flexDirection:'column',gap:14}}>
       <Card>
+        <Sec>🎯 志望大学院</Sec>
+        <TargetSchoolsSection cfg={local} setCfg={newCfg=>setLocal(p=>({...p,...(typeof newCfg==='function'?newCfg(p):newCfg)}))}/>
+      </Card>
+
+      <Card>
         <Sec>基本設定</Sec>
         <div style={{display:'flex',flexDirection:'column',gap:11}}>
           {CFG_FIELDS.map(({label,key,type})=>(
@@ -1695,7 +1829,7 @@ function SettingsView({cfg,setCfg,subjects,setSubjects,schedules,setSchedules,da
               <input type={type} value={local[key]??''} onChange={e=>setLocal(p=>({...p,[key]:type==='number'?(parseFloat(e.target.value)||0):e.target.value}))} style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:13}}/>
             </div>
           ))}
-          <button onClick={()=>setCfg(local)} style={{marginTop:2,padding:'11px',borderRadius:10,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>保存する</button>
+          <button onClick={()=>setCfg({...local,targetGraduateSchools:migrateTargetSchools(local)})} style={{marginTop:2,padding:'11px',borderRadius:10,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>保存する</button>
           {Math.abs(weeklyTargetDiff)>0.1&&(
             <div style={{padding:'10px 12px',borderRadius:9,background:'#fffbeb',border:'1px solid #fde68a',fontSize:11,color:'#92400e'}}>
               ⚠️ 曜日別スケジュールの合計は週{scheduleGrandTotal}hです。週目標{local.weeklyTargetHours||0}hと{weeklyTargetDiff>0?`${weeklyTargetDiff}h超過`:`${Math.abs(weeklyTargetDiff)}h不足`}しています。（目安として参考にしてください）
@@ -1814,7 +1948,8 @@ function Onboarding({subjects,setSubjects,schedules,setSchedules,cfg,setCfg,onCo
   const DAYS_JP=['日','月','火','水','木','金','土'];
 
   const saveAndNext=()=>{
-    setCfg(p=>({...p,...local}));
+    const migrated={...local,targetGraduateSchools:migrateTargetSchools({...local,targetGraduateSchools:[]})};
+    setCfg(p=>({...p,...migrated}));
     setStep(s=>s+1);
   };
 
@@ -1945,10 +2080,12 @@ const INIT_STUDENT_PROFILES=[
   {id:'st1',userId:'u_st1',name:'田中さん',grade:'大学4年',
    targetGraduateSchool:'東京大学大学院',department:'情報理工学系研究科',
    examDate:'2026-08-22',startDate:_d2(-30),weekdayStudyHours:3,weekendStudyHours:5,
+   targetGraduateSchools:[{id:'g1',priority:1,schoolName:'東京大学大学院',department:'情報理工学系研究科',examDate:'2026-08-22',memo:'第1志望'},{id:'g2',priority:2,schoolName:'京都大学大学院',department:'情報学研究科',examDate:'2026-08-28',memo:'併願'}],
    weeklyTargetHours:15,totalHoursGoal:400,active:true,onboarded:true},
   {id:'st2',userId:'u_st2',name:'佐藤さん',grade:'大学4年',
    targetGraduateSchool:'東京工業大学大学院',department:'情報通信系',
    examDate:'2026-09-05',startDate:_d2(-45),weekdayStudyHours:2,weekendStudyHours:4,
+   targetGraduateSchools:[{id:'g1',priority:1,schoolName:'東京科学大学大学院',department:'情報理工学院',examDate:'2026-09-05',memo:'第1志望'}],
    weeklyTargetHours:12,totalHoursGoal:350,active:true,onboarded:true},
   {id:'st3',userId:'u_st3',name:'鈴木さん',grade:'修士1年',
    targetGraduateSchool:'京都大学大学院',department:'電気電子工学専攻',
@@ -2057,7 +2194,8 @@ function calcStudentMetrics(profile,subjects,schedules,dailyRecs){
   let simpleStatus='順調';
   if(weekAchievementRate<50||recentMissing)simpleStatus='要確認';
   else if(weekAchievementRate<80)simpleStatus='やや遅れ';
-  return{daysLeft:daysUntil(profile.examDate),weekPlanned:r2(weekPlanned),weekActual,weekAchievementRate,todayActual,todayRecorded,subjectWeekMetrics,simpleStatus};
+  const primaryExam=getPrimaryTarget(profile)?.examDate||profile.examDate;
+  return{daysLeft:daysUntil(primaryExam),weekPlanned:r2(weekPlanned),weekActual,weekAchievementRate,todayActual,todayRecorded,subjectWeekMetrics,simpleStatus};
 }
 
 /* ─── ロール切替ヘッダー ─────────────────────────── */
@@ -2221,8 +2359,8 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
           <div>
             <div style={{fontSize:20,fontWeight:800,color:'#1e293b'}}>{profile.name}</div>
-            <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{profile.grade} / {profile.targetGraduateSchool}</div>
-            <div style={{fontSize:11,color:'#94a3b8'}}>{profile.department}</div>
+            <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{profile.grade} / {getPrimaryTarget(profile)?.schoolName||profile.targetGraduateSchool}</div>
+            <div style={{fontSize:11,color:'#94a3b8'}}>{getPrimaryTarget(profile)?.department||profile.department}</div>
           </div>
           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
             <span style={{fontSize:10,fontWeight:700,color:ss.color,background:ss.bg,border:`1px solid ${ss.border}`,padding:'3px 10px',borderRadius:10}}>{m.simpleStatus}</span>
@@ -2253,6 +2391,23 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
       {/* 概要タブ */}
       {detailTab==='overview'&&(
         <div style={{padding:'14px'}}>
+          {/* 志望大学院 */}
+          {(()=>{const tgs=getTargetSchools(profile);const PC=['#6366f1','#10b981','#f59e0b'];const PL=['第1志望','第2志望','第3志望'];return tgs.length>0&&(
+            <Card style={{padding:'12px 14px',marginBottom:12}}>
+              <div style={{fontWeight:700,fontSize:12,color:'#64748b',marginBottom:8}}>🎯 志望大学院</div>
+              {tgs.map((s,i)=>(
+                <div key={s.id} style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:i<tgs.length-1?8:0,paddingBottom:i<tgs.length-1?8:0,borderBottom:i<tgs.length-1?'1px solid #f1f5f9':'none'}}>
+                  <span style={{fontSize:9,fontWeight:800,color:'#fff',background:PC[i]||BRAND,padding:'2px 7px',borderRadius:7,flexShrink:0,marginTop:2}}>{PL[i]||`第${i+1}志望`}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#1e293b'}}>{s.schoolName}</div>
+                    {s.department&&<div style={{fontSize:11,color:'#64748b',marginTop:1}}>{s.department}</div>}
+                    {s.examDate&&<div style={{fontSize:11,color:'#94a3b8',marginTop:1}}>試験日：{s.examDate}（あと{Math.max(0,daysUntil(s.examDate))}日）</div>}
+                    {s.memo&&<div style={{fontSize:10,color:'#94a3b8',marginTop:1}}>📝 {s.memo}</div>}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          );})()}
           <Card style={{padding:'12px 14px',marginBottom:12}}>
             <div style={{fontWeight:700,fontSize:12,color:'#64748b',marginBottom:8}}>直近7日間</div>
             <div style={{display:'flex',gap:4,alignItems:'flex-end',height:60}}>
@@ -2575,7 +2730,7 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
                     <div>
                       <div style={{fontSize:14,fontWeight:700,color:'#1e293b'}}>{u.name}</div>
                       <div style={{fontSize:11,color:'#64748b'}}>{u.email}</div>
-                      {prof&&<div style={{fontSize:11,color:'#94a3b8'}}>{prof.targetGraduateSchool} / {prof.department}</div>}
+                      {prof&&<div style={{fontSize:11,color:'#94a3b8'}}>{getPrimaryTarget(prof)?.schoolName||prof.targetGraduateSchool} / {getPrimaryTarget(prof)?.department||prof.department}</div>}
                     </div>
                     <button onClick={()=>{toggleActive(u.id,'user');if(prof)toggleActive(prof.id,'profile');}}
                       style={{padding:'5px 12px',borderRadius:8,border:`1px solid ${u.active?'#fecaca':'#a7f3d0'}`,background:u.active?'#fff1f2':'#f0fdf4',color:u.active?'#dc2626':'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}>
