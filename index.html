@@ -1351,7 +1351,7 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
 
 /* ─── ガントチャート ─────────────────────────────── */
 function GanttChart({subjects,tasks,dates,today}){
-  const DAYS=dates.length,CW=36,LW=160;
+  const DAYS=dates.length,CW=26,LW=160;
   const DOW='日月火水木金土';
   return(
     <div style={{overflowX:'auto'}}>
@@ -1404,12 +1404,19 @@ function GanttChart({subjects,tasks,dates,today}){
 }
 
 /* ─── 計画タブ ──────────────────────────────────── */
-function PlanView({subjects,schedules,tasks,setTasks,studentId:planStudentId}){
+function PlanView({cfg,subjects,schedules,tasks,setTasks,studentId:planStudentId}){
   const[showTasks,setShowTasks]=useState(false);
   const[showForm,setShowForm]=useState(false);
   const[editId,setEditId]=useState(null);
   const today=todayStr();
-  const dates=useMemo(()=>Array.from({length:28},(_,i)=>fmt(addDays(getToday(),i))),[]);
+  const dates=useMemo(()=>{
+    const exam=cfg?.examDate;
+    let end;
+    if(exam){const e=new Date(exam+'T00:00:00');end=fmt(new Date(e.getFullYear(),e.getMonth()+1,0));}
+    else{end=fmt(addDays(getToday(),89));}
+    const days=[];let d=getToday();while(fmt(d)<=end){days.push(fmt(d));d=addDays(d,1);}
+    return days;
+  },[cfg?.examDate]);
   const weeklyData=useMemo(()=>subjects.map(s=>{
     const hours=Array.from({length:7},(_,dow)=>{const sc=schedules.find(s2=>s2.subjectId===s.id&&s2.dayOfWeek===dow);return sc?.enabled?sc.targetHours:0;});
     return{...s,hours,total:hours.reduce((a,h)=>a+h,0)};
@@ -1437,22 +1444,22 @@ function PlanView({subjects,schedules,tasks,setTasks,studentId:planStudentId}){
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
             <thead><tr>
               <th style={{textAlign:'left',padding:'5px 8px',fontWeight:700,color:'#64748b',fontSize:11,borderBottom:'2px solid #f1f5f9',minWidth:72}}>科目</th>
-              {DOW_LABELS.map((d,i)=><th key={i} style={{textAlign:'center',padding:'5px 6px',fontWeight:700,color:i===0?'#ef4444':i===6?'#f59e0b':'#64748b',fontSize:11,borderBottom:'2px solid #f1f5f9',width:46}}>{d}</th>)}
-              <th style={{textAlign:'center',padding:'5px 6px',fontWeight:700,color:BRAND,fontSize:11,borderBottom:'2px solid #f1f5f9',width:50}}>週計</th>
+              {DOW_LABELS.map((d,i)=><th key={i} style={{textAlign:'center',padding:'5px 6px',fontWeight:700,color:i===0?'#ef4444':i===6?'#f59e0b':'#64748b',fontSize:11,borderBottom:'2px solid #f1f5f9',width:46}}><div>{d}</div><div style={{fontSize:9,fontWeight:400,color:'#94a3b8'}}>（h）</div></th>)}
+              <th style={{textAlign:'center',padding:'5px 6px',fontWeight:700,color:BRAND,fontSize:11,borderBottom:'2px solid #f1f5f9',width:50}}><div>週計</div><div style={{fontSize:9,fontWeight:400,color:'#94a3b8'}}>（h）</div></th>
             </tr></thead>
             <tbody>
               {weeklyData.map(s=>(
                 <tr key={s.id} style={{borderBottom:'1px solid #f8fafc'}}>
                   <td style={{padding:'7px 8px'}}><div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:8,height:8,borderRadius:'50%',background:s.color,flexShrink:0}}/><span style={{fontWeight:600,color:'#334155',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span></div></td>
-                  {s.hours.map((h,i)=><td key={i} style={{textAlign:'center',padding:'7px 4px',color:h>0?'#334155':'#e2e8f0',fontWeight:h>0?600:400,fontSize:11}}>{h>0?`${h}h`:'—'}</td>)}
-                  <td style={{textAlign:'center',padding:'7px 4px',fontWeight:700,color:BRAND,fontSize:11}}>{s.total>0?`${s.total}h`:'—'}</td>
+                  {s.hours.map((h,i)=><td key={i} style={{textAlign:'center',padding:'7px 4px',color:h>0?'#334155':'#e2e8f0',fontWeight:h>0?600:400,fontSize:11}}>{h>0?`${h}`:'—'}</td>)}
+                  <td style={{textAlign:'center',padding:'7px 4px',fontWeight:700,color:BRAND,fontSize:11}}>{s.total>0?`${s.total}`:'—'}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot><tr style={{background:'#f8fafc'}}>
               <td style={{padding:'7px 8px',fontWeight:700,color:'#64748b',fontSize:11}}>合計</td>
-              {dayTotals.map((h,i)=><td key={i} style={{textAlign:'center',padding:'7px 4px',fontWeight:700,color:h>0?'#334155':'#e2e8f0',fontSize:11}}>{h>0?`${h}h`:'—'}</td>)}
-              <td style={{textAlign:'center',padding:'7px 4px',fontWeight:900,color:BRAND,fontSize:12}}>{grandTotal}h</td>
+              {dayTotals.map((h,i)=><td key={i} style={{textAlign:'center',padding:'7px 4px',fontWeight:700,color:h>0?'#334155':'#e2e8f0',fontSize:11}}>{h>0?`${h}`:'—'}</td>)}
+              <td style={{textAlign:'center',padding:'7px 4px',fontWeight:900,color:BRAND,fontSize:12}}>{grandTotal}</td>
             </tr></tfoot>
           </table>
         </div>
