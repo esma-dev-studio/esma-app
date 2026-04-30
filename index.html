@@ -2335,7 +2335,8 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
       {/* 学習記録タブ */}
       {detailTab==='records'&&(
         <div style={{padding:'14px'}}>
-          <StudyLogReview subjects={subjects} studyDetails={(studyDetails||[]).filter(d=>d.studentId===profile.id||!d.studentId)} dailyRecs={dailyRecs}/>
+          {(studyDetails||[]).length===0&&<div style={{fontSize:11,color:'#94a3b8',textAlign:'center',padding:'8px',marginBottom:8}}>※ データが表示されない場合は画面上部の「🔄 再読み込み」を押してください</div>}
+          <StudyLogReview subjects={subjects} studyDetails={studyDetails||[]} dailyRecs={dailyRecs}/>
         </div>
       )}
 
@@ -2363,7 +2364,7 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
 }
 
 /* ─── 講師ビュー（ルーター） ─────────────────────── */
-function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,setStudentProfiles,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks,allStudyDetails}){
+function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,setStudentProfiles,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks,allStudyDetails,onReload}){
   const[selectedId,setSelectedId]=useState(null);
   const[addMode,setAddMode]=useState(false);
   const[form,setForm]=useState({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
@@ -2404,7 +2405,8 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
   }
   return(
     <div>
-      <div style={{padding:'12px 14px 8px',display:'flex',justifyContent:'flex-end'}}>
+      <div style={{padding:'12px 14px 8px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        {onReload&&<button onClick={onReload} style={{padding:'6px 12px',borderRadius:8,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',fontWeight:700,fontSize:11,cursor:'pointer'}}>🔄 再読み込み</button>}
         <button onClick={()=>setAddMode(p=>!p)} style={{padding:'6px 14px',borderRadius:8,border:'none',background:BRAND,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer'}}>＋ 新規生徒追加</button>
       </div>
       {addMode&&(
@@ -2871,6 +2873,7 @@ function SupabaseApp(){
         setAllSchedulesRaw(sc.data||[]);setAllDailyRecsRaw(dr.data||[]);
         setAllTasksInstRaw(ta.data||[]);setInstructorNotesRaw(no.data||[]);
         setAllStudyDetailsInstRaw(isrd.data||[]);
+        console.log('[ESMA] instructor study_record_details:', isrd.data?.length, 'rows', isrd.error||'');
       }else{
         const[us,pr,is,su,sc,dr,no,ta,srd2]=await Promise.all([
           sb.from('users').select('*'),
@@ -2949,7 +2952,7 @@ function SupabaseApp(){
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
       <DbToast/>
-      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb} allStudyDetails={allStudyDetailsInst}/>
+      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb} allStudyDetails={allStudyDetailsInst} onReload={()=>window.location.reload()}/>
     </div>
   );
   return(
