@@ -1817,7 +1817,11 @@ function SettingsView({cfg,setCfg,subjects,setSubjects,schedules,setSchedules,da
     <div style={{display:'flex',flexDirection:'column',gap:14}}>
       <Card>
         <Sec>🎯 志望大学院</Sec>
-        <TargetSchoolsSection cfg={local} setCfg={newCfg=>setLocal(p=>({...p,...(typeof newCfg==='function'?newCfg(p):newCfg)}))}/>
+        <TargetSchoolsSection cfg={local} setCfg={newCfg=>{
+          const upd=typeof newCfg==='function'?newCfg(local):newCfg;
+          setLocal(p=>({...p,...upd}));
+          setCfg(p=>({...p,...upd}));
+        }}/>
       </Card>
 
       <Card>
@@ -2974,7 +2978,16 @@ function SupabaseApp(){
   const setCfg=useCallback((upd)=>{
     setCurrentProfile(prev=>{
       const next={...prev,...(typeof upd==='function'?upd(prev):upd)};
-      if(next?.id)sb.from('student_profiles').update(next).eq('id',next.id).then(r=>r.error&&console.error(r.error));
+      if(next?.id){
+        // targetGraduateSchools は jsonb カラム、それ以外は通常カラム
+        // 未知カラムによる PostgREST エラーを避けるため分離して保存
+        const PROFILE_KEYS=['id','name','email','grade','targetGraduateSchool','department','examDate',
+          'startDate','weekdayStudyHours','weekendStudyHours','weeklyTargetHours','totalHoursGoal',
+          'active','onboarded','targetGraduateSchools'];
+        const payload=Object.fromEntries(Object.entries(next).filter(([k])=>PROFILE_KEYS.includes(k)));
+        sb.from('student_profiles').update(payload).eq('id',next.id)
+          .then(r=>{if(r.error){console.error('[setCfg]',r.error);window.dispatchEvent(new CustomEvent('esma-db-error',{detail:`⚠️ 設定の保存に失敗しました（${r.error.message}）`}));}});
+      }
       return next;
     });
   },[]);
