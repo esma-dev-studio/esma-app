@@ -127,33 +127,67 @@ const Card=({children,style,onClick})=><div onClick={onClick} style={{background
 const Sec=({children,style})=><div style={{fontWeight:700,fontSize:12,color:'#64748b',textTransform:'uppercase',letterSpacing:.8,marginBottom:12,...style}}>{children}</div>;
 
 /* ─── 科目カード（今日の記録） ────────────────────── */
-function SubjectDayCard({subj,plannedH,record,onRecord}){
+function SubjectDayCard({subj,plannedH,record,onRecord,studyDetail,onSaveDetail}){
   const[mode,setMode]=useState(null);
   const[pickerInit,setPickerInit]=useState(null);
   const[selH,setSelH]=useState(null);
   const[showCustom,setShowCustom]=useState(false);
   const[customH,setCustomH]=useState('');
   const[showDetail,setShowDetail]=useState(false);
-  const[detail,setDetail]=useState({ul:3,memo:''});
+  const[ul,setUl]=useState(3);
+  const[det,setDet]=useState({materialName:'',studyRange:'',studyContent:'',issues:'',insights:'',nextAction:''});
+  const[saveMsg,setSaveMsg]=useState('');
   const isMobile=useIsMobile();
 
+  useEffect(()=>{if(record?.ul)setUl(record.ul);},[record?.ul]);
+  useEffect(()=>{
+    if(studyDetail){setDet({materialName:studyDetail.materialName||'',studyRange:studyDetail.studyRange||'',studyContent:studyDetail.studyContent||'',issues:studyDetail.issues||'',insights:studyDetail.insights||'',nextAction:studyDetail.nextAction||''});}
+  },[studyDetail?.materialName,studyDetail?.studyRange,studyDetail?.studyContent,studyDetail?.issues,studyDetail?.insights,studyDetail?.nextAction]);
+
+  const hasDetail=!!(studyDetail&&(studyDetail.materialName||studyDetail.studyContent||studyDetail.issues||studyDetail.nextAction||studyDetail.studyRange||studyDetail.insights));
   const resetPicker=()=>{setMode(null);setPickerInit(null);setSelH(null);setShowCustom(false);setCustomH('');};
   const startMode=(m,init)=>{
     setMode(m);
     setPickerInit(init!=null?init:(m==='done'?plannedH:m==='partial'?genPartialOpts(plannedH)[0]:plannedH));
-    setSelH(null); setShowCustom(false); setCustomH('');
+    setSelH(null);setShowCustom(false);setCustomH('');
   };
-  const getEffectiveH=()=>{
-    if(showCustom&&customH!=='')return parseFloat(customH)||0;
-    return selH!=null?selH:pickerInit;
-  };
+  const getEffectiveH=()=>{if(showCustom&&customH!=='')return parseFloat(customH)||0;return selH!=null?selH:pickerInit;};
   const doRecord=(actualH)=>{
     const h=Math.max(0,r2(parseFloat(actualH)||0));
     const calc=calcRecord(plannedH,h);
     const now=new Date().toISOString();
-    onRecord({actualHours:h,...calc,...(showDetail?{ul:detail.ul,memo:detail.memo}:{})},now);
+    onRecord({actualHours:h,...calc,ul},now);
     resetPicker();
   };
+  const saveDetailData=()=>{
+    if(!onSaveDetail)return;
+    onSaveDetail({materialName:det.materialName,studyRange:det.studyRange,studyContent:det.studyContent,issues:det.issues,insights:det.insights,nextAction:det.nextAction});
+    setSaveMsg('詳細記録を保存しました ✓');
+    setTimeout(()=>setSaveMsg(''),3000);
+  };
+
+  const detForm=(
+    <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #f1f5f9',display:'flex',flexDirection:'column',gap:10}}>
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:4}}>理解度（1〜5）</div>
+        <div style={{display:'flex',gap:5}}>{[1,2,3,4,5].map(n=><button key={n} onClick={()=>setUl(n)} style={{flex:1,height:32,borderRadius:7,border:'none',background:ul>=n?BRAND:'#f1f5f9',color:ul>=n?'#fff':'#94a3b8',fontWeight:700,cursor:'pointer',fontSize:13}}>{n}</button>)}</div>
+      </div>
+      {[['materialName','教材名','text','大学院入試 数学演習'],['studyRange','学習範囲','text','p.12〜p.18、第3章']].map(([key,label,type,ph])=>(
+        <div key={key}>
+          <div style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:3}}>{label}</div>
+          <input type={type} value={det[key]} onChange={e=>setDet(p=>({...p,[key]:e.target.value}))} placeholder={ph} style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12,boxSizing:'border-box'}}/>
+        </div>
+      ))}
+      {[['studyContent','学習内容','固有値・固有ベクトルの計算'],['issues','課題・つまずき','固有ベクトルの計算でミスが多い'],['insights','気づき','行基本変形の計算精度が重要'],['nextAction','🎯 次回やること','類題を3問解く']].map(([key,label,ph])=>(
+        <div key={key}>
+          <div style={{fontSize:11,fontWeight:600,color:key==='nextAction'?BRAND:'#64748b',marginBottom:3}}>{label}</div>
+          <textarea value={det[key]} onChange={e=>setDet(p=>({...p,[key]:e.target.value}))} rows={2} placeholder={ph} style={{width:'100%',padding:'8px 10px',borderRadius:8,border:`1.5px solid ${key==='nextAction'?BRAND+'50':'#e2e8f0'}`,fontSize:12,resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/>
+        </div>
+      ))}
+      {saveMsg&&<div style={{fontSize:11,color:'#059669',fontWeight:700,background:'#f0fdf4',borderRadius:8,padding:'7px 10px',border:'1px solid #a7f3d0',textAlign:'center'}}>{saveMsg}</div>}
+      <button onClick={saveDetailData} style={{width:'100%',padding:'10px',borderRadius:9,border:'none',background:BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>詳細記録を保存する</button>
+    </div>
+  );
 
   /* ── 記録済み表示 ── */
   if(record&&mode===null){
@@ -165,15 +199,13 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
             <div style={{width:10,height:10,borderRadius:'50%',background:subj.color,flexShrink:0}}/>
             <span style={{fontSize:14,fontWeight:700,color:'#0f172a'}}>{subj.name}</span>
           </div>
-          <span style={{fontSize:11,fontWeight:700,color:sd.color,background:sd.bg,border:`1px solid ${sd.border}`,padding:'3px 10px',borderRadius:20}}>{sd.label}</span>
+          <div style={{display:'flex',alignItems:'center',gap:5}}>
+            {hasDetail&&<span style={{fontSize:9,fontWeight:700,color:'#6366f1',background:'#eef2ff',border:'1px solid #c7d2fe',padding:'2px 7px',borderRadius:12}}>📝 詳細あり</span>}
+            <span style={{fontSize:11,fontWeight:700,color:sd.color,background:sd.bg,border:`1px solid ${sd.border}`,padding:'3px 10px',borderRadius:20}}>{sd.label}</span>
+          </div>
         </div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
-          {[
-            ['予定',`${plannedH}h`,'#64748b'],
-            ['実績',`${record.actualHours}h`,record.status==='over'?'#7c3aed':record.status==='done'?'#059669':'#334155'],
-            ...(record.unmetHours>0?[['未達',`-${r2(record.unmetHours).toFixed(1)}h`,'#d97706']]:[]),
-            ...(record.surplusHours>0?[['前倒し',`+${r2(record.surplusHours).toFixed(1)}h`,'#7c3aed']]:[]),
-          ].map(([l,v,c])=>(
+          {[['予定',`${plannedH}h`,'#64748b'],['実績',`${record.actualHours}h`,record.status==='over'?'#7c3aed':record.status==='done'?'#059669':'#334155'],...(record.unmetHours>0?[['未達',`-${r2(record.unmetHours).toFixed(1)}h`,'#d97706']]:[] ),...(record.surplusHours>0?[['前倒し',`+${r2(record.surplusHours).toFixed(1)}h`,'#7c3aed']]:[] )].map(([l,v,c])=>(
             <div key={l} style={{textAlign:'center',background:'#f8fafc',borderRadius:8,padding:'5px 10px',border:'1px solid #f1f5f9'}}>
               <div style={{fontSize:13,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
               <div style={{fontSize:9,color:'#94a3b8',marginTop:1}}>{l}</div>
@@ -181,19 +213,10 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
           ))}
         </div>
         <div style={{display:'flex',gap:8}}>
-          <button onClick={()=>startMode('edit',record.actualHours)} style={{flex:1,padding:'8px 14px',borderRadius:8,border:`1px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontSize:12,fontWeight:700,cursor:'pointer'}}>編集する</button>
-          <button onClick={()=>setShowDetail(p=>!p)} style={{padding:'8px 12px',borderRadius:8,border:'1px solid #e2e8f0',background:'#f8fafc',color:'#94a3b8',fontSize:11,cursor:'pointer'}}>{showDetail?'▲':'詳細 ▼'}</button>
+          <button onClick={()=>startMode('edit',record.actualHours)} style={{flex:1,padding:'8px 14px',borderRadius:8,border:`1px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontSize:12,fontWeight:700,cursor:'pointer'}}>時間を編集</button>
+          <button onClick={()=>setShowDetail(p=>!p)} style={{padding:'8px 12px',borderRadius:8,border:`1px solid ${hasDetail?'#c7d2fe':'#e2e8f0'}`,background:hasDetail?'#eef2ff':'#f8fafc',color:hasDetail?'#6366f1':'#94a3b8',fontSize:11,cursor:'pointer',fontWeight:hasDetail?700:400}}>{showDetail?'▲ 閉じる':(hasDetail?'📝 詳細を見る・編集':'詳細を記録 ▼')}</button>
         </div>
-        {showDetail&&(
-          <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
-            <div style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:6}}>理解度（1〜5）</div>
-            <div style={{display:'flex',gap:6,marginBottom:10}}>
-              {[1,2,3,4,5].map(n=><button key={n} onClick={()=>setDetail(p=>({...p,ul:n}))} style={{flex:1,height:34,borderRadius:7,border:'none',background:detail.ul>=n?BRAND:'#f1f5f9',color:detail.ul>=n?'#fff':'#94a3b8',fontWeight:700,cursor:'pointer'}}>{n}</button>)}
-            </div>
-            <textarea value={detail.memo} onChange={e=>setDetail(p=>({...p,memo:e.target.value}))} rows={2} placeholder="気づきや課題..." style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12,resize:'vertical',fontFamily:'inherit'}}/>
-            <button onClick={()=>onRecord({...record,ul:detail.ul,memo:detail.memo},new Date().toISOString())} style={{marginTop:8,width:'100%',padding:'8px',borderRadius:8,border:`1px solid ${BRAND}`,background:BRAND_LIGHT,color:BRAND,fontWeight:700,fontSize:12,cursor:'pointer'}}>メモを保存</button>
-          </div>
-        )}
+        {showDetail&&detForm}
       </div>
     );
   }
@@ -203,7 +226,7 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
     const opts=mode==='partial'?genPartialOpts(plannedH):genDoneOpts(plannedH);
     const effectiveH=getEffectiveH()??pickerInit??plannedH;
     const calc=calcRecord(plannedH,effectiveH);
-    const isOver=calc.status==='over', isDone=calc.status==='done';
+    const isOver=calc.status==='over',isDone=calc.status==='done';
     const modeTitle=mode==='edit'?'実績時間を編集':mode==='done'?'実績時間を選択（できた）':'実績時間を選択（少しやった）';
     return(
       <div style={{background:isOver?'#f5f3ff':'#fffbeb',borderRadius:14,border:`1.5px solid ${isOver?'#ddd6fe':'#fde68a'}`,borderLeft:`4px solid ${subj.color}`,padding:'14px 16px'}}>
@@ -212,50 +235,38 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
         <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
           {opts.map(h=>{
             const isSel=!showCustom&&Math.abs((selH??pickerInit??plannedH)-h)<0.01;
-            const isP=Math.abs(h-plannedH)<0.01, isO=h>plannedH;
+            const isP=Math.abs(h-plannedH)<0.01,isO=h>plannedH;
             return(
               <button key={h} onClick={()=>{setSelH(h);setShowCustom(false);setCustomH('');}}
-                style={{flex:'1 0 48px',padding:'10px 4px',borderRadius:10,
-                  border:isSel?`2px solid ${isO?'#7c3aed':BRAND}`:'1.5px solid #e2e8f0',
-                  background:isSel?(isO?'#7c3aed':BRAND):'#f8fafc',
-                  color:isSel?'#fff':isO?'#7c3aed':'#334155',
-                  fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                style={{flex:'1 0 48px',padding:'10px 4px',borderRadius:10,border:isSel?`2px solid ${isO?'#7c3aed':BRAND}`:'1.5px solid #e2e8f0',background:isSel?(isO?'#7c3aed':BRAND):'#f8fafc',color:isSel?'#fff':isO?'#7c3aed':'#334155',fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
                 <span>{h}h</span>
                 {isP&&<span style={{fontSize:8,opacity:.7,color:isSel?'rgba(255,255,255,.8)':'#059669'}}>予定</span>}
                 {isO&&<span style={{fontSize:8,color:isSel?'rgba(255,255,255,.75)':'#7c3aed'}}>+{r2(h-plannedH).toFixed(1)}</span>}
               </button>
             );
           })}
-          <button onClick={()=>setShowCustom(p=>!p)}
-            style={{flex:'1 0 48px',padding:'10px 4px',borderRadius:10,border:`1.5px solid ${showCustom?BRAND:'#e2e8f0'}`,background:showCustom?BRAND_LIGHT:'#f8fafc',color:showCustom?BRAND:'#64748b',fontWeight:700,fontSize:12,cursor:'pointer'}}>
-            手入力
-          </button>
+          <button onClick={()=>setShowCustom(p=>!p)} style={{flex:'1 0 48px',padding:'10px 4px',borderRadius:10,border:`1.5px solid ${showCustom?BRAND:'#e2e8f0'}`,background:showCustom?BRAND_LIGHT:'#f8fafc',color:showCustom?BRAND:'#64748b',fontWeight:700,fontSize:12,cursor:'pointer'}}>手入力</button>
         </div>
         {showCustom&&(
           <div style={{display:'flex',gap:8,marginBottom:10,alignItems:'center'}}>
-            <input type="number" min="0" max="24" step="0.5" value={customH} onChange={e=>setCustomH(e.target.value)} placeholder="例: 2.5" autoFocus
-              style={{flex:1,padding:'11px 12px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:14}}/>
+            <input type="number" min="0" max="24" step="0.5" value={customH} onChange={e=>setCustomH(e.target.value)} placeholder="例: 2.5" autoFocus style={{flex:1,padding:'11px 12px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:14}}/>
             <span style={{fontSize:13,color:'#64748b',flexShrink:0}}>h</span>
           </div>
         )}
         {effectiveH>0&&(
-          <div style={{fontSize:12,marginBottom:10,textAlign:'center',fontWeight:700,padding:'7px',borderRadius:8,
-            background:isOver?'#ede9fe':isDone?'#f0fdf4':'#fffbeb',
-            color:isOver?'#7c3aed':isDone?'#059669':'#d97706'}}>
+          <div style={{fontSize:12,marginBottom:10,textAlign:'center',fontWeight:700,padding:'7px',borderRadius:8,background:isOver?'#ede9fe':isDone?'#f0fdf4':'#fffbeb',color:isOver?'#7c3aed':isDone?'#059669':'#d97706'}}>
             {isOver?`予定より +${calc.surplusHours.toFixed(1)}h 前倒し！🎉`:isDone?`予定通り ${effectiveH}h 達成！✓`:`予定より -${calc.unmetHours.toFixed(1)}h`}
           </div>
         )}
         <div style={{display:'flex',gap:8}}>
-          <button onClick={()=>doRecord(effectiveH)} style={{flex:1,padding:'12px',borderRadius:10,border:'none',background:isOver?'#7c3aed':BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>
-            {mode==='edit'?'更新する':'記録する'}
-          </button>
+          <button onClick={()=>doRecord(effectiveH)} style={{flex:1,padding:'12px',borderRadius:10,border:'none',background:isOver?'#7c3aed':BRAND,color:'#fff',fontWeight:800,fontSize:13,cursor:'pointer'}}>{mode==='edit'?'更新する':'記録する'}</button>
           <button onClick={resetPicker} style={{padding:'12px 14px',borderRadius:10,border:'1px solid #e2e8f0',background:'#f8fafc',color:'#64748b',cursor:'pointer',fontSize:12}}>キャンセル</button>
         </div>
       </div>
     );
   }
 
-  /* ── デフォルト：3ボタン（スケジュールなし過去日は直接入力） ── */
+  /* ── デフォルト：3ボタン ── */
   const btnBase={flex:1,padding:isMobile?'14px 4px':'13px 4px',borderRadius:10,border:'none',fontWeight:800,fontSize:isMobile?13:12,cursor:'pointer',lineHeight:1.3};
   return(
     <div style={{background:'#fff',borderRadius:14,border:'1px solid #e8ecf0',borderLeft:`4px solid ${subj.color}`,padding:'14px 16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
@@ -267,34 +278,24 @@ function SubjectDayCard({subj,plannedH,record,onRecord}){
         <span style={{fontSize:12,color:'#64748b',background:'#f8fafc',padding:'3px 10px',borderRadius:20,border:'1px solid #e8ecf0'}}>{plannedH>0?`予定 ${plannedH}h`:'予定外'}</span>
       </div>
       {plannedH===0?(
-        <button onClick={()=>startMode('edit',1)} style={{...btnBase,flex:'none',width:'100%',background:BRAND,color:'#fff',padding:'12px'}}>
-          時間を入力して記録する
-        </button>
+        <button onClick={()=>startMode('edit',1)} style={{...btnBase,flex:'none',width:'100%',background:BRAND,color:'#fff',padding:'12px'}}>時間を入力して記録する</button>
       ):(
-      <div style={{display:'flex',gap:8}}>
-        <button onClick={()=>startMode('done',plannedH)} style={{...btnBase,background:'#10b981',color:'#fff'}}>✓<br/>できた</button>
-        <button onClick={()=>startMode('partial',genPartialOpts(plannedH)[0])} style={{...btnBase,background:'#fffbeb',color:'#d97706',border:'1.5px solid #fde68a'}}>△<br/>少しやった</button>
-        <button onClick={()=>doRecord(0)} style={{...btnBase,background:'#f8fafc',color:'#64748b',border:'1.5px solid #e2e8f0'}}>✗<br/>できなかった</button>
-      </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>startMode('done',plannedH)} style={{...btnBase,background:'#10b981',color:'#fff'}}>✓<br/>できた</button>
+          <button onClick={()=>startMode('partial',genPartialOpts(plannedH)[0])} style={{...btnBase,background:'#fffbeb',color:'#d97706',border:'1.5px solid #fde68a'}}>△<br/>少しやった</button>
+          <button onClick={()=>doRecord(0)} style={{...btnBase,background:'#f8fafc',color:'#64748b',border:'1.5px solid #e2e8f0'}}>✗<br/>できなかった</button>
+        </div>
       )}
       <button onClick={()=>setShowDetail(p=>!p)} style={{marginTop:10,width:'100%',padding:'7px',borderRadius:8,border:'1px solid #e2e8f0',background:'transparent',color:'#94a3b8',fontSize:11,cursor:'pointer'}}>
         {showDetail?'▲ 詳細入力を閉じる':'詳しく記録する ▼'}
       </button>
-      {showDetail&&(
-        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #f1f5f9'}}>
-          <div style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:6}}>理解度（1〜5）</div>
-          <div style={{display:'flex',gap:6,marginBottom:10}}>
-            {[1,2,3,4,5].map(n=><button key={n} onClick={()=>setDetail(p=>({...p,ul:n}))} style={{flex:1,height:34,borderRadius:7,border:'none',background:detail.ul>=n?BRAND:'#f1f5f9',color:detail.ul>=n?'#fff':'#94a3b8',fontWeight:700,cursor:'pointer'}}>{n}</button>)}
-          </div>
-          <textarea value={detail.memo} onChange={e=>setDetail(p=>({...p,memo:e.target.value}))} rows={2} placeholder="気づきや課題を記録..." style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1.5px solid #e2e8f0',fontSize:12,resize:'vertical',fontFamily:'inherit'}}/>
-        </div>
-      )}
+      {showDetail&&detForm}
     </div>
   );
 }
 
-/* ─── 今日の学習 ──────────────────────────────────── */
-function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
+
+function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId,studyDetails,setStudyDetails}){
   const today=todayStr();
   const [selDate,setSelDate]=useState(today);
   const isPast=selDate<today;
@@ -306,9 +307,9 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
       const d=new Date(prev+'T00:00:00');
       d.setDate(d.getDate()+delta);
       const next=fmt(d);
-      if(next>today) return prev;   // 未来は禁止
+      if(next>today) return prev;
       const nd=Math.round((new Date(today+'T00:00:00')-new Date(next+'T00:00:00'))/86400000);
-      if(nd>6) return prev;         // 7日前超は禁止
+      if(nd>6) return prev;
       return next;
     });
   },[today]);
@@ -319,7 +320,6 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
       .map(sc=>({...subjects.find(s=>s.id===sc.subjectId),plannedH:sc.targetHours}))
       .filter(s=>s.id)
   ,[schedules,subjects,selDOW]);
-  // 過去日でスケジュールがない場合は全科目を表示（予定0h）して記録可能にする
   const selSubjects=useMemo(()=>{
     if(scheduledSubjects.length>0) return scheduledSubjects;
     if(selDate<today) return subjects.map(s=>({...s,plannedH:0}));
@@ -327,6 +327,8 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
   },[scheduledSubjects,subjects,selDate,today]);
 
   const getRec=useCallback(sid=>dailyRecs.find(r=>r.subjectId===sid&&r.date===selDate),[dailyRecs,selDate]);
+  const getDetail=useCallback(sid=>(studyDetails||[]).find(d=>d.subjectId===sid&&d.date===selDate),[studyDetails,selDate]);
+
   const handleRecord=useCallback((subj,data,now)=>{
     setDailyRecs(prev=>{
       const idx=prev.findIndex(r=>r.subjectId===subj.id&&r.date===selDate);
@@ -337,12 +339,30 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
         actualHours:data.actualHours,
         status:data.status||calcRecord(subj.plannedH,data.actualHours).status,
         unmetHours:data.unmetHours??0,surplusHours:data.surplusHours??0,
-        createdAt:existing?existing.createdAt:now,editedAt:now,ul:data.ul,memo:data.memo,
+        createdAt:existing?existing.createdAt:now,editedAt:now,ul:data.ul,memo:data.memo||'',
         ...(studentId?{studentId}:{}),
       };
       return idx>=0?prev.map((r,i)=>i===idx?rec:r):[...prev,rec];
     });
   },[selDate,setDailyRecs,studentId]);
+
+  const handleSaveDetail=useCallback((subj,detailData)=>{
+    if(!setStudyDetails)return;
+    setStudyDetails(prev=>{
+      const arr=Array.isArray(prev)?prev:[];
+      const existing=arr.find(d=>d.subjectId===subj.id&&d.date===selDate);
+      const now=new Date().toISOString();
+      const rec={
+        id:existing?existing.id:`srd-${subj.id}-${selDate}-${Date.now()}`,
+        subjectId:subj.id,date:selDate,
+        ...(studentId?{studentId}:{}),
+        ...detailData,
+        updatedAt:now,
+        createdAt:existing?existing.createdAt:now,
+      };
+      return existing?arr.map(d=>d.subjectId===subj.id&&d.date===selDate?rec:d):[...arr,rec];
+    });
+  },[selDate,setStudyDetails,studentId]);
 
   const totalPlanned=useMemo(()=>selSubjects.reduce((a,s)=>a+s.plannedH,0),[selSubjects]);
   const selRecs=useMemo(()=>dailyRecs.filter(r=>r.date===selDate),[dailyRecs,selDate]);
@@ -381,7 +401,6 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
 
       {/* ── サマリーカード ── */}
       <Card style={{background:isPast?'#fafafa':BRAND_LIGHT,border:`1px solid ${isPast?'#e2e8f0':`${BRAND}30`}`,padding:'16px 18px'}}>
-        {/* 予定/実績/達成率 */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:8}}>
           {[['予定',`${totalPlanned}h`,'#334155'],['実績',`${totalActual.toFixed(1)}h`,BRAND],['達成率',`${achPct}%`,achPct>=100?'#059669':achPct>=80?'#d97706':BRAND]].map(([l,v,c])=>(
             <div key={l} style={{textAlign:'center',background:'#fff',borderRadius:10,padding:'10px 4px',border:'1px solid #e8ecf0'}}>
@@ -390,11 +409,9 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
             </div>
           ))}
         </div>
-        {/* 達成バー */}
         <div style={{height:6,background:'#e0e7ff',borderRadius:4,overflow:'hidden',marginBottom:8}}>
           <div style={{height:'100%',width:`${Math.min(100,achPct)}%`,background:achPct>=100?'#10b981':BRAND,borderRadius:4,transition:'width .5s'}}/>
         </div>
-        {/* ステータスバッジ行 */}
         <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
           <span style={{fontSize:11,background:'#f0fdf4',color:'#059669',border:'1px solid #a7f3d0',borderRadius:20,padding:'3px 10px',fontWeight:600}}>記録済み {recordedCount}科目</span>
           {unrecordedCount>0&&<span style={{fontSize:11,background:'#eff6ff',color:'#3b82f6',border:'1px solid #bfdbfe',borderRadius:20,padding:'3px 10px',fontWeight:600}}>未記録 {unrecordedCount}科目</span>}
@@ -415,13 +432,17 @@ function TodayView({subjects,schedules,dailyRecs,setDailyRecs,studentId}){
           <div style={{fontSize:12,color:'#94a3b8',marginTop:6}}>設定タブで曜日別スケジュールを設定してください</div>
         </Card>
       ):selSubjects.map(subj=>(
-        <SubjectDayCard key={subj.id} subj={subj} plannedH={subj.plannedH} record={getRec(subj.id)} onRecord={(data,now)=>handleRecord(subj,data,now)}/>
+        <SubjectDayCard key={subj.id} subj={subj} plannedH={subj.plannedH} record={getRec(subj.id)}
+          onRecord={(data,now)=>handleRecord(subj,data,now)}
+          studyDetail={getDetail(subj.id)}
+          onSaveDetail={(d)=>handleSaveDetail(subj,d)}
+        />
       ))}
     </div>
   );
 }
 
-/* ─── 今日の達成ゲージ ───────────────────────────── */
+
 function TodayGauge({planned,actual,surplus,unmet}){
   const pct=planned>0?actual/planned*100:0;
   const dispPct=Math.round(pct);
@@ -1047,7 +1068,75 @@ function RoadmapCard({remaining}){
   );
 }
 
-function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
+/* ─── 学習記録振り返り ───────────────────────────── */
+function StudyLogReview({subjects,studyDetails,dailyRecs}){
+  const[period,setPeriod]=useState('7days');
+  const[subjFilter,setSubjFilter]=useState('all');
+  const today=todayStr();
+  const cutoff=useMemo(()=>period==='7days'?fmt(addDays(getToday(),-6)):period==='30days'?fmt(addDays(getToday(),-29)):null,[period]);
+  const filtered=useMemo(()=>{
+    let items=Array.isArray(studyDetails)?[...studyDetails]:[];
+    if(cutoff)items=items.filter(d=>d.date>=cutoff&&d.date<=today);
+    if(subjFilter!=='all')items=items.filter(d=>d.subjectId===subjFilter);
+    return items.map(d=>{
+      const subj=subjects.find(s=>s.id===d.subjectId);
+      const rec=(dailyRecs||[]).find(r=>r.subjectId===d.subjectId&&r.date===d.date);
+      return{...d,subjName:subj?.name||'不明',subjColor:subj?.color||BRAND,actualH:rec?.actualHours||0};
+    }).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,30);
+  },[studyDetails,cutoff,subjFilter,subjects,dailyRecs,today]);
+
+  if(!Array.isArray(studyDetails)||studyDetails.length===0)return(
+    <Card style={{padding:'16px',textAlign:'center'}}>
+      <div style={{fontSize:30,marginBottom:6}}>📖</div>
+      <div style={{fontSize:13,color:'#94a3b8',lineHeight:1.6}}>詳細記録がまだありません。<br/>今日の記録で「詳しく記録する」から入力できます。</div>
+    </Card>
+  );
+  return(
+    <Card style={{padding:'16px 18px'}}>
+      <Sec>📖 学習記録の振り返り</Sec>
+      <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{display:'flex',gap:4}}>
+          {[['7days','直近7日'],['30days','直近30日'],['all','全期間']].map(([v,l])=>(
+            <button key={v} onClick={()=>setPeriod(v)} style={{padding:'4px 10px',borderRadius:20,border:`1px solid ${period===v?BRAND:'#e2e8f0'}`,background:period===v?BRAND:'#fff',color:period===v?'#fff':'#64748b',fontSize:11,fontWeight:700,cursor:'pointer'}}>{l}</button>
+          ))}
+        </div>
+        <select value={subjFilter} onChange={e=>setSubjFilter(e.target.value)} style={{marginLeft:'auto',padding:'4px 8px',borderRadius:8,border:'1px solid #e2e8f0',fontSize:11,color:'#64748b'}}>
+          <option value="all">全科目</option>
+          {subjects.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+      {filtered.length===0&&<div style={{fontSize:12,color:'#94a3b8',textAlign:'center',padding:'12px'}}>該当する記録がありません</div>}
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {filtered.map(d=>(
+          <div key={d.id||`${d.subjectId}-${d.date}`} style={{background:'#f8fafc',borderRadius:12,padding:'12px 14px',border:'1px solid #e8ecf0',borderLeft:`3px solid ${d.subjColor}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,alignItems:'flex-start',flexWrap:'wrap',gap:4}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:'#334155'}}>{d.subjName}</div>
+                <div style={{fontSize:10,color:'#94a3b8'}}>{d.date}{d.actualH>0?` · ${d.actualH}h`:''}</div>
+              </div>
+              {d.nextAction&&<span style={{fontSize:10,color:BRAND,background:BRAND_LIGHT,border:`1px solid ${BRAND}40`,padding:'2px 8px',borderRadius:10,fontWeight:700,flexShrink:0}}>🎯 次回あり</span>}
+            </div>
+            {[['教材',d.materialName,'#64748b'],['範囲',d.studyRange,'#64748b'],['内容',d.studyContent,'#334155'],['課題',d.issues,'#d97706'],['気づき',d.insights,'#334155']].map(([l,v,c])=>v?(
+              <div key={l} style={{display:'flex',gap:6,marginBottom:3,alignItems:'flex-start'}}>
+                <span style={{fontSize:9,color:'#94a3b8',flexShrink:0,width:28,paddingTop:2}}>{l}</span>
+                <span style={{fontSize:12,color:c,lineHeight:1.5}}>{v}</span>
+              </div>
+            ):null)}
+            {d.nextAction&&(
+              <div style={{marginTop:7,padding:'7px 10px',background:'#eef2ff',borderRadius:8,border:'1px solid #c7d2fe'}}>
+                <div style={{fontSize:10,fontWeight:700,color:BRAND,marginBottom:2}}>🎯 次回やること</div>
+                <div style={{fontSize:12,color:'#334155'}}>{d.nextAction}</div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+
+function Dashboard({cfg,subjects,schedules,dailyRecs,setTab,studyDetails}){
   const today=todayStr();
   const todayDOW=getToday().getDay();
   const isMobile=useIsMobile();
@@ -1315,6 +1404,7 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab}){
       {showMore&&(
         <div style={{display:'flex',flexDirection:'column',gap:14}}>
           <StudyMomentumCard schedules={schedules} dailyRecs={dailyRecs} today={today}/>
+          <StudyLogReview subjects={subjects} studyDetails={studyDetails||[]} dailyRecs={dailyRecs}/>
           <StudyHeatmap schedules={schedules} dailyRecs={dailyRecs} today={today}/>
           <Card style={{padding:'16px 18px'}}>
             <Sec>累計学習ペース（{startDate} 〜）</Sec>
@@ -2070,7 +2160,7 @@ function StudentList({profiles,allSubjects,allSchedules,allDailyRecs,instructorN
 }
 
 /* ─── 講師：生徒詳細 ─────────────────────────────── */
-function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,instructorUserId,onUpdateNotes,onBack,setAllSubjects,setAllSchedules,allTasks,setAllTasks,setStudentProfiles}){
+function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,instructorUserId,onUpdateNotes,onBack,setAllSubjects,setAllSchedules,allTasks,setAllTasks,setStudentProfiles,studyDetails}){
   const m=useMemo(()=>calcStudentMetrics(profile,subjects,schedules,dailyRecs),[profile,subjects,schedules,dailyRecs]);
   const ss=STATUS_STYLE[m.simpleStatus]||STATUS_STYLE['要確認'];
   const sortedNotes=useMemo(()=>[...instructorNotes].sort((a,b)=>b.date.localeCompare(a.date)),[instructorNotes]);
@@ -2156,6 +2246,7 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
         <button style={dtab('settings')} onClick={()=>setDetailTab('settings')}>科目・設定</button>
         <button style={dtab('tasks')} onClick={()=>setDetailTab('tasks')}>タスク</button>
         <button style={dtab('notes')} onClick={()=>setDetailTab('notes')}>メモ</button>
+        <button style={dtab('records')} onClick={()=>setDetailTab('records')}>📖 学習記録</button>
         <button style={dtab('preview')} onClick={()=>setDetailTab('preview')}>👁 生徒画面</button>
       </div>
 
@@ -2241,6 +2332,13 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
         </div>
       )}
 
+      {/* 学習記録タブ */}
+      {detailTab==='records'&&(
+        <div style={{padding:'14px'}}>
+          <StudyLogReview subjects={subjects} studyDetails={(studyDetails||[]).filter(d=>d.studentId===profile.id||!d.studentId)} dailyRecs={dailyRecs}/>
+        </div>
+      )}
+
       {/* 生徒画面プレビュータブ */}
       {detailTab==='preview'&&(
         <div>
@@ -2265,7 +2363,7 @@ function StudentDetail({profile,subjects,schedules,dailyRecs,instructorNotes,ins
 }
 
 /* ─── 講師ビュー（ルーター） ─────────────────────── */
-function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,setStudentProfiles,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks}){
+function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedules,allDailyRecs,instructorNotes,setInstructorNotes,setStudentProfiles,allStudentProfiles,setAllSubjects,setAllSchedules,allTasks,setAllTasks,allStudyDetails}){
   const[selectedId,setSelectedId]=useState(null);
   const[addMode,setAddMode]=useState(false);
   const[form,setForm]=useState({name:'',email:'',grade:'',targetGraduateSchool:'',department:'',examDate:'',weeklyTargetHours:12,totalHoursGoal:350});
@@ -2301,6 +2399,7 @@ function InstructorView({instructorUserId,studentProfiles,allSubjects,allSchedul
       allTasks={allTasks}
       setAllTasks={setAllTasks}
       setStudentProfiles={setStudentProfiles}
+      studyDetails={(allStudyDetails||[]).filter(d=>d.studentId===selectedId)}
     />;
   }
   return(
@@ -2374,6 +2473,7 @@ function AdminView({users,setUsers,studentProfiles,setStudentProfiles,instructor
       allTasks={allTasks||[]}
       setAllTasks={setAllTasks}
       setStudentProfiles={setStudentProfiles}
+      studyDetails={(allStudyDetails||[]).filter(d=>d.studentId===selectedId)}
     />;
   }
   const instructors=users.filter(u=>u.role==='instructor');
@@ -2667,6 +2767,7 @@ function SupabaseApp(){
   const[dailyRecs,setDailyRecsRaw]=useState([]);
   const[tasks,setTasksRaw]=useState([]);
   const[myNotes,setMyNotes]=useState([]);
+  const[studyDetails,setStudyDetailsRaw]=useState([]);
 
   // 講師用
   const[studentProfiles,setStudentProfilesRaw]=useState([]);
@@ -2677,6 +2778,7 @@ function SupabaseApp(){
   const[instructorStudents,setInstructorStudentsRaw]=useState([]);
   const[instructorNotes,setInstructorNotesRaw]=useState([]);
   const[allTasksInst,setAllTasksInstRaw]=useState([]);
+  const[allStudyDetailsInst,setAllStudyDetailsInstRaw]=useState([]);
 
   // 管理者用
   const[adminUsers,setAdminUsersRaw]=useState([]);
@@ -2693,6 +2795,8 @@ function SupabaseApp(){
   const setSchedules     =useMemo(()=>makeDbSetter(setSchedulesRaw,    'schedules',    currentStudentId),[currentStudentId]);
   const setDailyRecs     =useMemo(()=>makeDbSetter(setDailyRecsRaw,    'daily_records',currentStudentId),[currentStudentId]);
   const setTasks         =useMemo(()=>makeDbSetter(setTasksRaw,        'tasks',        currentStudentId),[currentStudentId]);
+  const setStudyDetails  =useMemo(()=>makeDbSetter(setStudyDetailsRaw, 'study_record_details',currentStudentId),[currentStudentId]);
+  const setAllStudyDetailsInstDb=useMemo(()=>makeDbSetter(setAllStudyDetailsInstRaw,'study_record_details'),[]);
   const setInstructorNotes=useMemo(()=>makeDbSetter(setInstructorNotesRaw,'instructor_notes'),[]);
   const setAdminUsers    =useMemo(()=>makeDbSetter(setAdminUsersRaw,   'users'),        []);
   const setAdminProfiles =useMemo(()=>makeDbSetter(setAdminProfilesRaw,'student_profiles'),[]);
@@ -2740,29 +2844,33 @@ function SupabaseApp(){
       setCurrentRole(u.role);setCurrentUserId(uid);
       if(u.role==='student'){
         const sid=u.studentId;setCurrentStudentId(sid);
-        const[pr,su,sc,dr,ta,no]=await Promise.all([
+        const[pr,su,sc,dr,ta,no,srd]=await Promise.all([
           sb.from('student_profiles').select('*').eq('id',sid).single(),
           sb.from('subjects').select('*').eq('studentId',sid),
           sb.from('schedules').select('*').eq('studentId',sid),
           sb.from('daily_records').select('*').eq('studentId',sid),
           sb.from('tasks').select('*').eq('studentId',sid),
           sb.from('instructor_notes').select('*').eq('studentId',sid),
+          sb.from('study_record_details').select('*').eq('studentId',sid),
         ]);
         setCurrentProfile(pr.data);setOnboardedState(pr.data?.onboarded||false);
         setSubjectsRaw(su.data||[]);setSchedulesRaw(sc.data||[]);
         setDailyRecsRaw(dr.data||[]);setTasksRaw(ta.data||[]);setMyNotes(no.data||[]);
+        setStudyDetailsRaw(srd.data||[]);
       }else if(u.role==='instructor'){
-        const[pr,su,sc,dr,ta,no]=await Promise.all([
+        const[pr,su,sc,dr,ta,no,isrd]=await Promise.all([
           sb.from('student_profiles').select('*'),
           sb.from('subjects').select('*'),
           sb.from('schedules').select('*'),
           sb.from('daily_records').select('*'),
           sb.from('tasks').select('*'),
           sb.from('instructor_notes').select('*').eq('instructorUserId',uid),
+          sb.from('study_record_details').select('*'),
         ]);
         setStudentProfilesRaw(pr.data||[]);setAllSubjectsRaw(su.data||[]);
         setAllSchedulesRaw(sc.data||[]);setAllDailyRecsRaw(dr.data||[]);
         setAllTasksInstRaw(ta.data||[]);setInstructorNotesRaw(no.data||[]);
+        setAllStudyDetailsInstRaw(isrd.data||[]);
       }else{
         const[us,pr,is,su,sc,dr,no,ta]=await Promise.all([
           sb.from('users').select('*'),
@@ -2827,8 +2935,8 @@ function SupabaseApp(){
             </div>
           </div>
         )}
-        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab}/>}
-        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studentId={currentStudentId}/>}
+        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab} studyDetails={studyDetails}/>}
+        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studentId={currentStudentId} studyDetails={studyDetails} setStudyDetails={setStudyDetails}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks} studentId={currentStudentId}/>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
         <nav style={navSt}>{STUDENT_TABS.map(t=><button key={t.id} style={nb(tab===t.id)} onClick={()=>setTab(t.id)}><span style={{fontSize:18}}>{t.icon}</span><span style={{fontSize:9,fontWeight:tab===t.id?800:500}}>{t.label}</span></button>)}</nav>
@@ -2839,7 +2947,7 @@ function SupabaseApp(){
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'#f8fafc'}}>
       {hdr}
       <DbToast/>
-      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb}/>
+      <InstructorView instructorUserId={currentUserId} studentProfiles={studentProfiles} allSubjects={allSubjects} allSchedules={allSchedules} allDailyRecs={allDailyRecs} instructorNotes={instructorNotes} setInstructorNotes={setInstructorNotes} setStudentProfiles={setStudentProfilesDb} setAllSubjects={setAllSubjectsInstDb} setAllSchedules={setAllSchedulesInstDb} allTasks={allTasksInst} setAllTasks={setAllTasksInstDb} allStudyDetails={allStudyDetailsInst}/>
     </div>
   );
   return(
@@ -2869,6 +2977,7 @@ function DemoApp(){
   const[allSchedules,setAllSchedules]=useStorage('esma_v2_schedules',INIT_SCHEDULES_V2);
   const[allDailyRecs,setAllDailyRecs]=useStorage('esma_v2_daily',INIT_DAILY_V2);
   const[allTasks,setAllTasks]=useStorage('esma_v2_tasks',INIT_TASKS_V2);
+  const[allStudyDetails,setAllStudyDetails]=useStorage('esma_v2_study_details',[]);
   const[instructorNotes,setInstructorNotes]=useStorage('esma_v2_inotes',INIT_INSTRUCTOR_NOTES);
   const[instructorStudents,setInstructorStudents]=useStorage('esma_v2_instructor_students',INIT_INSTRUCTOR_STUDENTS);
   const[tab,setTab]=useState('dashboard');
@@ -2885,6 +2994,7 @@ function DemoApp(){
   const schedules=useMemo(()=>allSchedules.filter(s=>s.studentId===currentStudentId),[allSchedules,currentStudentId]);
   const dailyRecs=useMemo(()=>allDailyRecs.filter(r=>r.studentId===currentStudentId),[allDailyRecs,currentStudentId]);
   const tasks=useMemo(()=>allTasks.filter(t=>t.studentId===currentStudentId),[allTasks,currentStudentId]);
+  const studyDetails=useMemo(()=>allStudyDetails.filter(d=>d.studentId===currentStudentId),[allStudyDetails,currentStudentId]);
 
   // studentIdを自動付与するラッパーセッター（既存コンポーネントをそのまま使うため）
   const makeSetterFor=(setAll,sid)=>(updater)=>{
@@ -2896,6 +3006,7 @@ function DemoApp(){
     });
   };
   const setSubjects  =useMemo(()=>makeSetterFor(setAllSubjects,  currentStudentId),[currentStudentId]);
+  const setStudyDetails=useMemo(()=>makeSetterFor(setAllStudyDetails,currentStudentId),[currentStudentId]);
   const setSchedules =useMemo(()=>makeSetterFor(setAllSchedules, currentStudentId),[currentStudentId]);
   const setDailyRecs =useMemo(()=>makeSetterFor(setAllDailyRecs, currentStudentId),[currentStudentId]);
   const setTasks     =useMemo(()=>makeSetterFor(setAllTasks,     currentStudentId),[currentStudentId]);
@@ -2945,8 +3056,8 @@ function DemoApp(){
             </div>
           );
         })()}
-        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab}/>}
-        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs}/>}
+        {tab==='dashboard'&&<Dashboard cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} dailyRecs={dailyRecs} setTab={setTab} studyDetails={studyDetails}/>}
+        {tab==='today'&&<TodayView cfg={cfg} subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} studyDetails={studyDetails} setStudyDetails={setStudyDetails}/>}
         {tab==='plan'&&<PlanView cfg={cfg} subjects={subjects} schedules={schedules} tasks={tasks} setTasks={setTasks} studentId={currentStudentId}/>}
         {tab==='settings'&&<SettingsView cfg={cfg} setCfg={setCfg} subjects={subjects} setSubjects={setSubjects} schedules={schedules} setSchedules={setSchedules} dailyRecs={dailyRecs} setDailyRecs={setDailyRecs} tasks={tasks} setTasks={setTasks}/>}
         <nav style={navStyle}>
