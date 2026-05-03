@@ -1048,11 +1048,11 @@ function BadgesSection({dailyRecs,subjects,schedules}){
 }
 
 const ROADMAP_PHASES=[
-  {id:'final',    label:'直前期', minDays:0,   msg:'本番直前！これまでの学習を信じて、弱点の最終確認と過去問復習に集中しましょう。'},
-  {id:'polish',   label:'仕上げ期',minDays:30, msg:'仕上げフェーズ。苦手分野の集中攻略と過去問演習を交互に進めましょう。'},
-  {id:'develop',  label:'充実期', minDays:60,  msg:'力をつける時期。科目ごとに基礎を固めながら、演習量を徐々に増やしましょう。'},
-  {id:'build',    label:'構築期', minDays:120, msg:'基礎から応用へ移行する時期。インプットとアウトプットのバランスを意識しましょう。'},
   {id:'prep',     label:'準備期', minDays:180, msg:'学習習慣を作る大切な時期。毎日コツコツ積み上げることが最大の武器になります。'},
+  {id:'build',    label:'構築期', minDays:120, msg:'基礎から応用へ移行する時期。インプットとアウトプットのバランスを意識しましょう。'},
+  {id:'develop',  label:'充実期', minDays:60,  msg:'力をつける時期。科目ごとに基礎を固めながら、演習量を徐々に増やしましょう。'},
+  {id:'polish',   label:'仕上げ期',minDays:30, msg:'仕上げフェーズ。苦手分野の集中攻略と過去問演習を交互に進めましょう。'},
+  {id:'final',    label:'直前期', minDays:0,   msg:'本番直前！これまでの学習を信じて、弱点の最終確認と過去問復習に集中しましょう。'},
 ];
 function getRoadmapPhase(remaining){
   for(const p of ROADMAP_PHASES){if(remaining>=p.minDays)return p;}
