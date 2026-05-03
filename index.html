@@ -1071,17 +1071,24 @@ function RoadmapCard({remaining,examDate}){
     if(!examDate) return [];
     const exam=new Date(examDate+'T00:00:00');
     const addD=(base,d)=>{const r=new Date(base);r.setDate(r.getDate()+d);return r;};
-    const fmtM=(d)=>`${d.getMonth()+1}/${d.getDate()}`;
-    // ROADMAP_PHASES は準備期→直前期の降順
+    const fmtMD=(d)=>`${d.getMonth()+1}/${d.getDate()}`;
+    // ROADMAP_PHASES は準備期(180)→直前期(0)の降順
+    // フェーズの「開始」= 前フェーズ(minDays大)の minDays-1 日前
+    // フェーズの「終了」= このフェーズの minDays 日前（最終日）
     return ROADMAP_PHASES.map((p,i)=>{
-      const nextP=ROADMAP_PHASES[i+1]; // より近いフェーズ
-      // このフェーズの「残り日数」範囲
-      const endDays=p.minDays;           // このフェーズの下限（残り日数）
-      const startDays=nextP?nextP.minDays-1:9999; // 上のフェーズとの境界
-      // 実際の日付 = 試験日 - 残り日数
-      const startDate=nextP?addD(exam,-startDays):null; // 準備期は起点不定
-      const endDate=addD(exam,-endDays);
-      return{...p,startDate,endDate,startLabel:startDate?fmtM(startDate):'〜',endLabel:fmtM(endDate)};
+      const prevP=ROADMAP_PHASES[i-1]; // より遠いフェーズ（minDaysが大きい側）
+      // 開始日: 前フェーズの閾値の翌日 = 試験日-(prevP.minDays-1)日前
+      const startDaysFromExam=prevP ? prevP.minDays-1 : null;
+      // 終了日: このフェーズの最終日 = 試験日-p.minDays日前（直前期は試験日当日）
+      const endDaysFromExam=p.minDays;
+      const startDate=startDaysFromExam!==null ? addD(exam,-startDaysFromExam) : null;
+      const endDate=p.id==='final' ? exam : addD(exam,-endDaysFromExam);
+      // 残り日数のラベル
+      const daysLabel=prevP ? `残${p.minDays}〜${prevP.minDays-1}日` : `残${p.minDays}日以上`;
+      return{...p,startDate,endDate,
+        startLabel:startDate?fmtMD(startDate):null,
+        endLabel:fmtMD(endDate),
+        daysLabel};
     });
   },[examDate]);
 
@@ -1137,12 +1144,10 @@ function RoadmapCard({remaining,examDate}){
                       {p.id==='prep'
                         ?<span>〜 {p.endLabel}まで</span>
                         :p.id==='final'
-                          ?<span>{p.startLabel} 〜 試験日</span>
+                          ?<span>{p.startLabel} 〜 {p.endLabel}（試験日）</span>
                           :<span>{p.startLabel} 〜 {p.endLabel}</span>
                       }
-                      <div style={{fontSize:9,color:'#94a3b8'}}>
-                        {p.id==='prep'?`残${p.minDays}日以上`:p.id==='final'?`残${p.minDays}〜${ROADMAP_PHASES[ROADMAP_PHASES.length-2].minDays-1}日`:`残${p.minDays}〜${ROADMAP_PHASES[ROADMAP_PHASES.findIndex(x=>x.id===p.id)-1]?.minDays-1||''}日`}
-                      </div>
+                      <div style={{fontSize:9,color:'#94a3b8'}}>{p.daysLabel}</div>
                     </div>
                   </div>
                 );
