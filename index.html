@@ -1059,33 +1059,98 @@ function getRoadmapPhase(remaining){
   return ROADMAP_PHASES[0];
 }
 
-function RoadmapCard({remaining}){
+function RoadmapCard({remaining,examDate}){
   if(!remaining||remaining<0)return null;
   const phase=getRoadmapPhase(remaining);
   const phaseIdx=ROADMAP_PHASES.findIndex(p=>p.id===phase.id);
   const nextPhase=phaseIdx>0?ROADMAP_PHASES[phaseIdx-1]:null;
   const daysToNext=nextPhase?remaining-nextPhase.minDays:0;
+
+  // 各フェーズの開始・終了日を試験日から逆算
+  const phaseRanges=useMemo(()=>{
+    if(!examDate) return [];
+    const exam=new Date(examDate+'T00:00:00');
+    const addD=(base,d)=>{const r=new Date(base);r.setDate(r.getDate()+d);return r;};
+    const fmtM=(d)=>`${d.getMonth()+1}/${d.getDate()}`;
+    // ROADMAP_PHASES は準備期→直前期の降順
+    return ROADMAP_PHASES.map((p,i)=>{
+      const nextP=ROADMAP_PHASES[i+1]; // より近いフェーズ
+      // このフェーズの「残り日数」範囲
+      const endDays=p.minDays;           // このフェーズの下限（残り日数）
+      const startDays=nextP?nextP.minDays-1:9999; // 上のフェーズとの境界
+      // 実際の日付 = 試験日 - 残り日数
+      const startDate=nextP?addD(exam,-startDays):null; // 準備期は起点不定
+      const endDate=addD(exam,-endDays);
+      return{...p,startDate,endDate,startLabel:startDate?fmtM(startDate):'〜',endLabel:fmtM(endDate)};
+    });
+  },[examDate]);
+
+  const PC={prep:'#84cc16',build:'#3b82f6',develop:'#8b5cf6',polish:'#f59e0b',final:'#ef4444'};
+  const[expanded,setExpanded]=useState(false);
   return(
     <div style={{background:'#fff',borderRadius:14,padding:'14px 16px',border:'1px solid #e8ecf0',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
       <div style={{fontWeight:800,fontSize:13,color:'#1e293b',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
         <span style={{fontSize:15}}>🗓</span>合格ロードマップ
       </div>
-      <div style={{display:'flex',gap:3,marginBottom:12}}>
-        {[...ROADMAP_PHASES].reverse().map(p=>{
+
+      {/* フェーズバー */}
+      <div style={{display:'flex',gap:3,marginBottom:8}}>
+        {ROADMAP_PHASES.map(p=>{
           const isActive=p.id===phase.id;
+          const isPast=ROADMAP_PHASES.findIndex(x=>x.id===p.id)>phaseIdx;
           return(
             <div key={p.id} style={{flex:1,textAlign:'center'}}>
-              <div style={{height:5,background:isActive?BRAND:'#e2e8f0',borderRadius:3,marginBottom:4}}/>
-              <div style={{fontSize:8,color:isActive?BRAND:'#94a3b8',fontWeight:isActive?800:400,lineHeight:1.3}}>{p.label}</div>
+              <div style={{height:6,background:isActive?PC[p.id]:isPast?`${PC[p.id]}55`:'#e2e8f0',borderRadius:3,marginBottom:4,transition:'background .3s'}}/>
+              <div style={{fontSize:8,color:isActive?PC[p.id]:isPast?`${PC[p.id]}88`:'#94a3b8',fontWeight:isActive?800:400,lineHeight:1.3}}>{p.label}</div>
             </div>
           );
         })}
       </div>
-      <div style={{background:BRAND_LIGHT,borderRadius:10,padding:'10px 12px',border:`1px solid ${BRAND}30`}}>
+
+      {/* 現在フェーズ情報 */}
+      <div style={{background:BRAND_LIGHT,borderRadius:10,padding:'10px 12px',border:`1px solid ${BRAND}30`,marginBottom:8}}>
         <div style={{fontSize:11,fontWeight:800,color:BRAND_DARK,marginBottom:2}}>現在地：{phase.label}フェーズ</div>
         {nextPhase&&<div style={{fontSize:10,color:'#6366f1',marginBottom:4}}>次のフェーズ（{nextPhase.label}）まであと{daysToNext}日</div>}
         <div style={{fontSize:11,color:'#475569',lineHeight:1.6}}>{phase.msg}</div>
       </div>
+
+      {/* フェーズ日程一覧 */}
+      {phaseRanges.length>0&&(
+        <div>
+          <button onClick={()=>setExpanded(p=>!p)} style={{width:'100%',padding:'6px 10px',borderRadius:8,border:'1px solid #e2e8f0',background:'#f8fafc',color:'#64748b',fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span>📅 各フェーズの期間を{expanded?'閉じる':'確認する'}</span>
+            <span>{expanded?'▲':'▼'}</span>
+          </button>
+          {expanded&&(
+            <div style={{marginTop:8,display:'flex',flexDirection:'column',gap:5}}>
+              {phaseRanges.map(p=>{
+                const isActive=p.id===phase.id;
+                const isPast=ROADMAP_PHASES.findIndex(x=>x.id===p.id)>phaseIdx;
+                return(
+                  <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:9,background:isActive?`${PC[p.id]}12`:'#f8fafc',border:`1px solid ${isActive?PC[p.id]+'40':'#f1f5f9'}`}}>
+                    <div style={{width:8,height:8,borderRadius:'50%',background:isPast?`${PC[p.id]}55`:PC[p.id],flexShrink:0}}/>
+                    <div style={{flex:1}}>
+                      <span style={{fontSize:11,fontWeight:isActive?800:600,color:isActive?PC[p.id]:'#475569'}}>{p.label}</span>
+                      {isActive&&<span style={{fontSize:9,color:PC[p.id],marginLeft:5,fontWeight:700}}>← 現在</span>}
+                    </div>
+                    <div style={{fontSize:10,color:'#64748b',textAlign:'right',flexShrink:0}}>
+                      {p.id==='prep'
+                        ?<span>〜 {p.endLabel}まで</span>
+                        :p.id==='final'
+                          ?<span>{p.startLabel} 〜 試験日</span>
+                          :<span>{p.startLabel} 〜 {p.endLabel}</span>
+                      }
+                      <div style={{fontSize:9,color:'#94a3b8'}}>
+                        {p.id==='prep'?`残${p.minDays}日以上`:p.id==='final'?`残${p.minDays}〜${ROADMAP_PHASES[ROADMAP_PHASES.length-2].minDays-1}日`:`残${p.minDays}〜${ROADMAP_PHASES[ROADMAP_PHASES.findIndex(x=>x.id===p.id)-1]?.minDays-1||''}日`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1452,7 +1517,7 @@ function Dashboard({cfg,subjects,schedules,dailyRecs,setTab,studyDetails}){
             <SubjectPaceChart subjects={subjects} schedules={schedules} dailyRecs={dailyRecs} weekDays={weekDays} today={today}/>
           </Card>
           <BadgesSection dailyRecs={dailyRecs} subjects={subjects} schedules={schedules}/>
-          <RoadmapCard remaining={remaining}/>
+          <RoadmapCard remaining={remaining} examDate={primaryTarget.examDate||cfg.examDate}/>
           <Card>
             <Sec>科目別 累計 / 未達</Sec>
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
